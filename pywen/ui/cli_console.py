@@ -144,24 +144,26 @@ class CLIConsole:
             tool_name = tool_call.name
             arguments = tool_call.arguments
         
-        # Format parameter display
-        self.console.print(f"🔧 [bold cyan]{tool_name}[/bold cyan]")
-        if arguments:
-            self.console.print("Arguments:")
-            
-            # 特殊处理一些常见的长参数
-            for key, value in arguments.items():
-                if key == "content" and len(str(value)) > 100:
-                    # 长内容只显示前100个字符
-                    content_preview = str(value)[:100] + "..."
-                    self.console.print(f"  [cyan]{key}[/cyan]: {content_preview}")
+        # Show enhanced preview for file operations
+        if tool_name in ['write_file', 'edit_file', 'edit'] and tool:
+            try:
+                # Get detailed confirmation message with diff preview
+                confirmation_details = await tool.get_confirmation_details(**arguments)
+                if confirmation_details and hasattr(tool, '_generate_confirmation_message'):
+                    detailed_message = await tool._generate_confirmation_message(**arguments)
+                    self.console.print(detailed_message)
                 else:
-                    # 普通参数正常显示
-                    self.console.print(f"  [cyan]{key}[/cyan]: {value}")
+                    # Fallback to basic display
+                    self._display_basic_tool_info(tool_name, arguments)
+            except Exception:
+                # Fallback to basic display if preview fails
+                self._display_basic_tool_info(tool_name, arguments)
         else:
-            self.console.print("No arguments")
+            # Basic display for other tools
+            self._display_basic_tool_info(tool_name, arguments)
+
         self.console.print()
-        
+
         # Use prompt_toolkit for async input
         from prompt_toolkit import PromptSession
         from prompt_toolkit.formatted_text import HTML
@@ -395,4 +397,22 @@ class CLIConsole:
     def set_max_context_tokens(self, max_tokens: int):
         """Set maximum context tokens for current model."""
         self.max_context_tokens = max_tokens
+
+    def _display_basic_tool_info(self, tool_name: str, arguments: dict):
+        """Display basic tool information without diff preview."""
+        self.console.print(f"🔧 [bold cyan]{tool_name}[/bold cyan]")
+        if arguments:
+            self.console.print("Arguments:")
+
+            # 特殊处理一些常见的长参数
+            for key, value in arguments.items():
+                if key == "content" and len(str(value)) > 100:
+                    # 长内容只显示前100个字符
+                    content_preview = str(value)[:100] + "..."
+                    self.console.print(f"  [cyan]{key}[/cyan]: {content_preview}")
+                else:
+                    # 普通参数正常显示
+                    self.console.print(f"  [cyan]{key}[/cyan]: {value}")
+        else:
+            self.console.print("No arguments")
 

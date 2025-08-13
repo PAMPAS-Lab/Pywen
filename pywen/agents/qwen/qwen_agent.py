@@ -790,9 +790,15 @@ Your core function is efficient and safe assistance. Balance extreme conciseness
                 turn.add_tool_result(result)
                 
                 # 添加到对话历史
+                # Handle both structured (dict) and simple (str) result formats
+                if isinstance(result.result, dict):
+                    content = result.result.get('summary', str(result.result)) or str(result.error)
+                else:
+                    content = str(result.result) or str(result.error)
+
                 tool_msg = LLMMessage(
                     role="tool",
-                    content=result.result or str(result.error),
+                    content=content,
                     tool_call_id=tool_call.call_id
                 )
                 self.conversation_history.append(tool_msg)

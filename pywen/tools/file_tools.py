@@ -29,7 +29,95 @@ class WriteFileTool(BaseTool):
             },
             risk_level=ToolRiskLevel.MEDIUM  # Writing files requires confirmation
         )
-    
+
+    async def _generate_confirmation_message(self, **kwargs) -> str:
+        """Generate detailed confirmation message with file preview."""
+        path = kwargs.get("path", "")
+        content = kwargs.get("content", "")
+
+        # Check if file exists
+        file_exists = os.path.exists(path)
+
+        if file_exists:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    old_content = f.read()
+
+                # Generate actual diff preview for file overwrite
+                import difflib
+                old_lines = old_content.splitlines(keepends=True)
+                new_lines = content.splitlines(keepends=True)
+
+                diff_lines = list(difflib.unified_diff(
+                    old_lines, new_lines,
+                    fromfile=f"a/{path}", tofile=f"b/{path}",
+                    n=3
+                ))
+
+                if diff_lines:
+                    # Show first few lines of diff
+                    preview_lines = diff_lines[:20]  # Limit to first 20 lines
+                    diff_text = ''.join(preview_lines)
+                    if len(diff_lines) > 20:
+                        diff_text += f"\n... ({len(diff_lines) - 20} more lines)"
+
+                    return f"📝 Overwrite File: {path}\n\n{diff_text}"
+                else:
+                    return f"📝 Overwrite File: {path}\nNo changes detected"
+
+            except Exception:
+                return f"📝 Overwrite File: {path} (unable to read current content)"
+        else:
+            # New file
+            lines_count = len(content.splitlines())
+            preview = f"📄 Create New File: {path}\n"
+            preview += f"📊 Content: {lines_count} lines, {len(content)} characters\n\n"
+
+            # Show first few lines as preview
+            lines = content.splitlines()
+            preview_lines = lines[:5]
+            for i, line in enumerate(preview_lines, 1):
+                preview += f"{i:2d}| {line}\n"
+
+            if len(lines) > 5:
+                preview += f"... ({len(lines) - 5} more lines)"
+
+            return preview
+
+    async def _generate_confirmation_panel(self, **kwargs):
+        """Generate Rich Panel with side-by-side diff preview."""
+        path = kwargs.get("path", "")
+        content = kwargs.get("content", "")
+
+        # Check if file exists
+        file_exists = os.path.exists(path)
+
+        if file_exists:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    old_content = f.read()
+
+                # Generate side-by-side comparison panel
+                from pywen.ui.diff_display import DiffDisplay
+
+                panel = DiffDisplay.create_side_by_side_comparison(
+                    old_content, content, path, max_lines=20
+                )
+
+                return panel
+
+            except Exception:
+                return None
+        else:
+            # For new files, show content preview
+            from pywen.ui.highlighted_content import HighlightedContentDisplay
+
+            panel = HighlightedContentDisplay.create_write_file_result_display(
+                content, path, is_new_file=True, max_lines=15
+            )
+
+            return panel
+
     async def execute(self, **kwargs) -> ToolResult:
         """Write content to a file."""
         path = kwargs.get("path")
@@ -61,16 +149,19 @@ class WriteFileTool(BaseTool):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-            # Return detailed result
+            # Return result with content information for display
+            lines_count = len(content.splitlines())
             return ToolResult(
                 call_id="",
                 result={
-                    "message": f"Successfully wrote {len(content)} characters to {path}",
+                    "operation": "write_file",
                     "file_path": path,
                     "content": content,
                     "old_content": old_content if file_exists else None,
                     "is_new_file": not file_exists,
-                    "operation": "write_file"
+                    "lines_count": lines_count,
+                    "chars_count": len(content),
+                    "summary": f"Successfully {'overwrote' if file_exists else 'created'} {path} ({lines_count} lines, {len(content)} characters\ncontent:{content})"
                 }
             )
         

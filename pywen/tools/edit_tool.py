@@ -34,6 +34,50 @@ class EditTool(BaseTool):
             risk_level=ToolRiskLevel.MEDIUM  # Editing files requires confirmation
         )
 
+    async def _generate_confirmation_message(self, **kwargs) -> str:
+        """Generate detailed confirmation message with diff preview."""
+        path = kwargs.get("path", "")
+        old_str = kwargs.get("old_str", "")
+        new_str = kwargs.get("new_str", "")
+
+        try:
+            # Read current file content for diff preview
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            # Check if old_str exists
+            if old_str not in content:
+                return f"❌ Text to replace not found in {path}"
+
+            # Generate actual diff preview
+            # Create the new content after replacement
+            new_content = content.replace(old_str, new_str)
+
+            # Generate text-based diff for confirmation message
+            import difflib
+            old_lines = content.splitlines(keepends=True)
+            new_lines = new_content.splitlines(keepends=True)
+
+            diff_lines = list(difflib.unified_diff(
+                old_lines, new_lines,
+                fromfile=f"a/{path}", tofile=f"b/{path}",
+                n=3
+            ))
+
+            if diff_lines:
+                # Show first few lines of diff
+                preview_lines = diff_lines[:15]  # Limit to first 15 lines
+                diff_text = ''.join(preview_lines)
+                if len(diff_lines) > 15:
+                    diff_text += f"\n... ({len(diff_lines) - 15} more lines)"
+
+                return f"📝 Edit File: {path}\n\n{diff_text}"
+            else:
+                return f"📝 Edit File: {path}\nNo changes detected"
+
+        except Exception as e:
+            return f"Edit {path}: {old_str} → {new_str} (Preview error: {e})"
+
     async def execute(self, **kwargs) -> ToolResult:
         """Edit file by replacing text."""
         path = kwargs.get("path")
@@ -68,15 +112,17 @@ class EditTool(BaseTool):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(new_content)
 
-            # Return detailed result with diff information
+            # Return result with diff information for display
             return ToolResult(
                 call_id="",
                 result={
-                    "message": f"Successfully replaced text in {path}",
+                    "operation": "edit_file",
                     "file_path": path,
+                    "old_content": content,
+                    "new_content": new_content,
                     "old_text": old_str,
                     "new_text": new_str,
-                    "operation": "edit_file"
+                    "summary": f"Successfully edited {path}: replaced \n{old_str} \nlines with \n{new_str} \nlines"
                 }
             )
         

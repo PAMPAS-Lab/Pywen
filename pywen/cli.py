@@ -19,6 +19,7 @@ from pywen.agents.qwen.qwen_agent import QwenAgent
 from pywen.ui.cli_console import CLIConsole
 from pywen.ui.command_processor import CommandProcessor
 from pywen.ui.utils.keyboard import create_key_bindings
+from pywen.ui.highlighted_content import create_enhanced_tool_result_display
 
 
 def generate_session_id() -> str:
@@ -497,90 +498,24 @@ def display_tool_result(data: dict, console: CLIConsole):
     """Display tool execution result."""
     if data["success"]:
         from rich.panel import Panel
-        from rich.syntax import Syntax
         from rich.text import Text
-        import difflib
 
         tool_name = data.get('name', 'Tool')
         result = data.get('result', '')
 
-        # Handle new structured result format
+        # Enhanced result display with highlighted content for file operations
         if isinstance(result, dict) and result.get('operation') in ['write_file', 'edit_file']:
-            panel = _display_file_operation_result(result, tool_name)
-        # Legacy handling for write_file operations
-        elif tool_name == "write_file" and "Successfully wrote" in str(result):
-            # Extract filename from result
-            import re
-            match = re.search(r'to (\S+)', str(result))
-            if match:
-                filename = match.group(1)
-                try:
-                    with open(filename, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                    
-                    # Determine language based on file extension
-                    if filename.endswith('.py'):
-                        language = 'python'
-                    elif filename.endswith('.js'):
-                        language = 'javascript'
-                    elif filename.endswith('.html'):
-                        language = 'html'
-                    elif filename.endswith('.css'):
-                        language = 'css'
-                    else:
-                        language = 'text'
-                    
-                    # Create syntax highlighted code block
-                    syntax = Syntax(content, language, theme="monokai", line_numbers=True)
-                    
-                    panel = Panel(
-                        syntax,
-                        title=f"✓ {tool_name} - {filename}",
-                        title_align="left",
-                        border_style="green",
-                        padding=(0, 1)
-                    )
-                except Exception:
-                    # If file reading fails, show original result
-                    panel = Panel(
-                        str(result),
-                        title=f"✓ {tool_name}",
-                        title_align="left",
-                        border_style="green",
-                        padding=(0, 1)
-                    )
-            else:
-                panel = Panel(
-                    str(result),
-                    title=f"✓ {tool_name}",
-                    title_align="left",
-                    border_style="green",
-                    padding=(0, 1)
-                )
-        elif tool_name == "web_fetch" or tool_name == "web_search":
-            # Limit the result to 500 characters and add a note if truncated
-            max_length = 100
-            truncated_result = str(result)[:max_length]
-            if len(str(result)) > max_length:
-                truncated_result += f"\n... (显示前 {max_length} 个字符)"
-            
-            panel = Panel(
-                truncated_result,
-                title=f"✓ {tool_name} result",
-                title_align="left",
-                border_style="green",
-                padding=(0, 1)
-            )
+            panel = create_enhanced_tool_result_display(result, tool_name)
         else:
-            # Normal display for other tools
+            # Simple result display for other tools
             panel = Panel(
-                str(result),
-                title=f"✓ {tool_name} result",
+                Text(str(result)),
+                title=f"✓ {tool_name}",
                 title_align="left",
                 border_style="green",
                 padding=(0, 1)
             )
-        
+
         console.console.print(panel)
     else:
         # Error case with red border
@@ -596,121 +531,6 @@ def display_tool_result(data: dict, console: CLIConsole):
             padding=(0, 1)
         )
         console.console.print(panel)
-
-
-def _display_file_operation_result(result: dict, tool_name: str):
-    """Display file operation result with diff information."""
-    from rich.panel import Panel
-    from rich.text import Text
-    from rich.syntax import Syntax
-    import difflib
-
-    operation = result.get('operation')
-    file_path = result.get('file_path', 'unknown')
-    message = result.get('message', 'Operation completed')
-
-    if operation == 'edit_file':
-        # Show diff for edit operations
-        old_text = result.get('old_text', '')
-        new_text = result.get('new_text', '')
-
-        # Create a simple diff display
-        diff_content = Text()
-        diff_content.append("📝 File Edit Summary:\n", style="bold cyan")
-        diff_content.append(f"File: {file_path}\n\n", style="dim")
-
-        # Show the change
-        diff_content.append("- ", style="red")
-        diff_content.append(old_text[:100] + ("..." if len(old_text) > 100 else ""), style="red")
-        diff_content.append("\n")
-        diff_content.append("+ ", style="green")
-        diff_content.append(new_text[:100] + ("..." if len(new_text) > 100 else ""), style="green")
-
-        return Panel(
-            diff_content,
-            title=f"✓ {tool_name} - {file_path}",
-            title_align="left",
-            border_style="green",
-            padding=(0, 1)
-        )
-
-    elif operation == 'write_file':
-        content = result.get('content', '')
-        old_content = result.get('old_content')
-        is_new_file = result.get('is_new_file', False)
-
-        if is_new_file:
-            # Show preview for new files
-            preview_content = content[:200] + ("..." if len(content) > 200 else "")
-
-            # Determine language for syntax highlighting
-            language = 'text'
-            if file_path.endswith('.py'):
-                language = 'python'
-            elif file_path.endswith('.js'):
-                language = 'javascript'
-            elif file_path.endswith('.html'):
-                language = 'html'
-            elif file_path.endswith('.css'):
-                language = 'css'
-            elif file_path.endswith('.json'):
-                language = 'json'
-
-            try:
-                syntax = Syntax(preview_content, language, theme="monokai", line_numbers=False)
-                content_display = syntax
-            except:
-                content_display = Text(preview_content)
-
-            return Panel(
-                content_display,
-                title=f"✓ {tool_name} - New File: {file_path}",
-                title_align="left",
-                border_style="green",
-                padding=(0, 1)
-            )
-        else:
-            # Show diff for file overwrites
-            if old_content:
-                diff_lines = list(difflib.unified_diff(
-                    old_content.splitlines(keepends=True),
-                    content.splitlines(keepends=True),
-                    fromfile=f"{file_path} (before)",
-                    tofile=f"{file_path} (after)",
-                    n=3
-                ))
-
-                # Limit diff display
-                if len(diff_lines) > 20:
-                    diff_display = ''.join(diff_lines[:20]) + "\n... (diff truncated)"
-                else:
-                    diff_display = ''.join(diff_lines)
-
-                return Panel(
-                    Text(diff_display),
-                    title=f"✓ {tool_name} - Modified: {file_path}",
-                    title_align="left",
-                    border_style="green",
-                    padding=(0, 1)
-                )
-            else:
-                # Fallback to simple message
-                return Panel(
-                    Text(message),
-                    title=f"✓ {tool_name}",
-                    title_align="left",
-                    border_style="green",
-                    padding=(0, 1)
-                )
-
-    # Fallback
-    return Panel(
-        Text(message),
-        title=f"✓ {tool_name}",
-        title_align="left",
-        border_style="green",
-        padding=(0, 1)
-    )
 
 
 def handle_tool_call_event(data: dict, console: CLIConsole):
