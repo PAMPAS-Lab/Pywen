@@ -35,44 +35,17 @@ class BaseAgent(ABC):
     def _setup_tools(self):
         """Setup tools based on agent configuration."""
         enabled_tools = self.get_enabled_tools()
-        tool_configs = self.get_tool_configs()
-        
-        for tool_name in enabled_tools:
-            try:
-                tool_instance = self._create_tool_instance(tool_name, tool_configs.get(tool_name, {}))
-                if tool_instance:
-                    self.tool_registry.register(tool_instance)
-            except Exception as e:
-                self.cli_console.print(f"Failed to register tool {tool_name}: {e}")
+
+        # Use the new ToolRegistry method to register tools by names
+        registered_tools = self.tool_registry.register_tools_by_names(enabled_tools, self.config)
+
+        # Report any tools that failed to register
+        failed_tools = set(enabled_tools) - set(registered_tools)
+        if failed_tools and self.cli_console:
+            for tool_name in failed_tools:
+                self.cli_console.print(f"Failed to register tool: {tool_name}", "yellow")
     
-    def _create_tool_instance(self, tool_name: str, tool_config: Dict[str, Any]):
-        """Create tool instance by name."""
-        tool_map = {
-            'read_file': lambda: self._import_and_create('tools.file_tools', 'ReadFileTool'),
-            'write_file': lambda: self._import_and_create('tools.file_tools', 'WriteFileTool'),
-            'edit_file': lambda: self._import_and_create('tools.edit_tool', 'EditTool'),
-            'read_many_files': lambda: self._import_and_create('tools.read_many_files_tool', 'ReadManyFilesTool'),
-            'ls': lambda: self._import_and_create('tools.ls_tool', 'LSTool'),
-            'grep': lambda: self._import_and_create('tools.grep_tool', 'GrepTool'),
-            'glob': lambda: self._import_and_create('tools.glob_tool', 'GlobTool'),
-            'bash': lambda: self._import_and_create('tools.bash_tool', 'BashTool'),
-            'web_fetch': lambda: self._import_and_create('tools.web_fetch_tool', 'WebFetchTool'),
-            'web_search': lambda: self._import_and_create('tools.web_search_tool', 'WebSearchTool', self.config),
-            'memory': lambda: self._import_and_create('tools.memory_tool', 'MemoryTool'),
-        }
-        
-        if tool_name in tool_map:
-            return tool_map[tool_name]()
-        else:
-            
-            return None
-    
-    def _import_and_create(self, module_name: str, class_name: str, *args):
-        """Dynamically import and create tool instance."""
-        import importlib
-        module = importlib.import_module(module_name)
-        tool_class = getattr(module, class_name)
-        return tool_class(*args)
+
     
     @abstractmethod
     def get_enabled_tools(self) -> List[str]:

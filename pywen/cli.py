@@ -192,6 +192,9 @@ async def interactive_mode_streaming(agent: QwenAgent, console: CLIConsole, sess
             
             # Reset display tracking and enter task execution
             console.reset_display_tracking()
+            # Reset Claude agent start flag for new conversation
+            if hasattr(console, '_claude_started'):
+                delattr(console, '_claude_started')
             in_task_execution = True
             cancel_event.clear()
             
@@ -286,56 +289,178 @@ async def handle_streaming_event(event, console, agent=None):
     data = event.get("data", {})
 
     if agent.type == "QwenAgent":
-        
+
         if event_type == "user_message":
             console.print(f"🔵 User:{data['message']}","blue",True)
             console.print("")
-        
+
         elif event_type == "task_continuation":
             console.print(f"🔄 Continuing Task (Turn {data['turn']}):","yellow",True)
             console.print(f"{data['message']}")
             console.print("")
-        
+
         elif event_type == "llm_stream_start":
             print("🤖 ", end="", flush=True)
-        
+
         elif event_type == "llm_chunk":
             print(data["content"], end="", flush=True)
-        
+
         elif event_type == "tool_result":
             display_tool_result(data, console)
-        
+
         elif event_type == "waiting_for_user":
             console.print(f"💭{data['reasoning']}","yellow")
             console.print("")
             return "waiting_for_user"
-        
+
         elif event_type == "model_continues":
             console.print(f"🔄 Model continues: {data['reasoning']}","cyan")
             if data.get('next_action'):
                 console.print(f"🎯 Next: {data['next_action'][:100]}...","dim")
             console.print("")
-        
+
         elif event_type == "task_complete":
             console.print(f"\n✅ Task completed!","green",True)
             console.print("")
             return "task_complete"
-        
+
         elif event_type == "max_turns_reached":
             console.print(f"⚠️ Maximum turns reached","yellow",True)
             console.print("")
             return "max_turns_reached"
-        
+
         elif event_type == "error":
             console.print(f"❌ Error: {data['error']}","red")
             console.print("")
             return "error"
-        
+
         elif event_type == "trajectory_saved":
             # Only show trajectory save info at task start
             if data.get('is_task_start', False):
                 console.print(f"✅ Trajectory saved to: {data['path']}","dim")
-    
+
+    elif agent.type == "ClaudeCodeAgent":
+        # Handle Claude Code Agent events
+        if event_type == "llm_stream_start":
+            # Start of LLM streaming
+            print("🧠 ", end="", flush=True)
+            console._claude_started = True
+
+        elif event_type == "llm_chunk":
+            # Streaming content chunk
+            content = data.get("content", "")
+            if content:
+                print(content, end="", flush=True)
+
+        elif event_type == "content":
+            # Non-streaming content from Claude Code Agent
+            content = event.get("content", "")
+            if content:  # Only print if there's actual content
+                # Add Claude icon at the start of first content
+                if not hasattr(console, '_claude_started'):
+                    print("🧠 ", end="", flush=True)
+                    console._claude_started = True
+                print(content, end="", flush=True)
+
+        elif event_type == "tool_call":
+            # Handle tool call display
+            tool_call = event.get("tool_call", {})
+            tool_name = tool_call.get("name", "Unknown")
+            arguments = tool_call.get("arguments", {})
+
+            # Create tool call display
+            from rich.panel import Panel
+            args_display = str(arguments) if arguments else "No arguments"
+            panel = Panel(
+                args_display,
+                title=f"🔧 {tool_name}",
+                title_align="left",
+                border_style="yellow",
+                padding=(0, 1)
+            )
+            console.console.print(panel)
+
+        elif event_type == "tool_call_start":
+            # Tool call announced (before execution)
+            tool_data = event.get("data", {})
+            tool_name = tool_data.get("name", "Unknown")
+            arguments = tool_data.get("arguments", {})
+
+            # Create tool call display
+            from rich.panel import Panel
+            args_display = str(arguments) if arguments else "No arguments"
+            panel = Panel(
+                args_display,
+                title=f"🔧 {tool_name}",
+                title_align="left",
+                border_style="yellow",
+                padding=(0, 1)
+            )
+            console.console.print(panel)
+
+        elif event_type == "tool_start":
+            # Tool execution started
+            tool_data = event.get("data", {})
+            tool_name = tool_data.get("name", event.get("tool_name", "Unknown"))
+            console.print(f"🔧 Executing {tool_name}...", "yellow")
+
+        elif event_type == "tool_result":
+            # Tool execution completed
+            tool_data = event.get("data", {})
+            tool_name = tool_data.get("name", event.get("tool_name", "Tool"))
+            result = tool_data.get("result", event.get("result", ""))
+            success = tool_data.get("success", True)
+
+            # Use existing display_tool_result function
+            display_data = {
+                "success": success,
+                "name": tool_name,
+                "result": result
+            }
+            display_tool_result(display_data, console)
+
+        elif event_type == "tool_error":
+            # Tool execution failed
+            tool_name = event.get("tool_name", "Tool")
+            error = event.get("error", "Unknown error")
+
+            tool_data = {
+                "success": False,
+                "name": tool_name,
+                "error": error
+            }
+            display_tool_result(tool_data, console)
+
+        elif event_type == "max_iterations_reached":
+            # Maximum iterations reached
+            content = event.get("content", "Maximum iterations reached")
+            depth = event.get("depth", "unknown")
+            # Reset the start flag for next conversation
+            if hasattr(console, '_claude_started'):
+                delattr(console, '_claude_started')
+            console.print(f"\n⚠️ {content} (depth: {depth})", "yellow", True)
+            console.print("")
+            return "max_iterations_reached"
+
+        elif event_type == "final":
+            # Final response from Claude Code Agent
+            # Reset the start flag for next conversation
+            if hasattr(console, '_claude_started'):
+                delattr(console, '_claude_started')
+            console.print("\n✅ Task completed!", "green", True)
+            console.print("")
+            return "task_complete"
+
+        elif event_type == "error":
+            # General error
+            error_msg = event.get("content", "Unknown error")
+            # Reset the start flag for next conversation
+            if hasattr(console, '_claude_started'):
+                delattr(console, '_claude_started')
+            console.print(f"❌ Error: {error_msg}", "red")
+            console.print("")
+            return "error"
+
     elif agent.type == "GeminiResearchDemo":
         if event_type == "user_message":
             console.print(f"🔵 User:{data['message']}","blue", True)
@@ -362,7 +487,7 @@ async def handle_streaming_event(event, console, agent=None):
             print(data["content"], end="", flush=True)
         elif event_type == "error":
             console.print(f"❌ Error: {data['error']}",color="red")
-        
+
 
 
     return None
@@ -501,16 +626,19 @@ def handle_tool_call_event(data: dict, console: CLIConsole):
         console.console.print(panel)
 
 
-async def single_prompt_mode_streaming(agent: QwenAgent, console: CLIConsole, prompt_text: str):
+async def single_prompt_mode_streaming(agent, console: CLIConsole, prompt_text: str):
     """Run agent in single prompt mode with streaming."""
-    
+
     # Reset display tracking
     console.reset_display_tracking()
-    
+    # Reset Claude agent start flag for new conversation
+    if hasattr(console, '_claude_started'):
+        delattr(console, '_claude_started')
+
     # Execute user request
     async for event in agent.run(prompt_text):
         # Handle streaming events
-        await handle_streaming_event(event, console)
+        await handle_streaming_event(event, console, agent)
 
 if __name__ == "__main__":
     main_sync()

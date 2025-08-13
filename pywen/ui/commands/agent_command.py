@@ -11,8 +11,12 @@ AVAILABLE_AGENTS = {
         "description": "General purpose conversational and coding assistant"
     },
     "research": {
-        "name": "🔬 GeminiResearchDemo", 
+        "name": "🔬 GeminiResearchDemo",
         "description": "Gemini open-sourced Multi-step research agent demo for comprehensive information gathering"
+    },
+    "claude": {
+        "name": "🧠 Claude Code Agent",
+        "description": "AI coding assistant with advanced file operations and project understanding"
     }
 }
 
@@ -81,28 +85,34 @@ class AgentCommand(BaseCommand):
         """获取当前agent类型"""
         if agent is None:
             return "unknown"
-        
+
         # 动态导入避免循环依赖
         try:
-            from agents.qwen.qwen_agent import QwenAgent
-            from agents.research.google_research_agent import GeminiResearchDemo
-            
+            from pywen.agents.qwen.qwen_agent import QwenAgent
+            from pywen.agents.research.google_research_agent import GeminiResearchDemo
+            from pywen.agents.claudecode.claude_code_agent import ClaudeCodeAgent
+
             if isinstance(agent, QwenAgent):
                 return "qwen"
             elif isinstance(agent, GeminiResearchDemo):
-                return "GeminiResearchDemo"
+                return "research"
+            elif isinstance(agent, ClaudeCodeAgent):
+                return "claude"
         except ImportError:
             pass
-        
+
         return "unknown"
     
     def _create_agent(self, config, agent_type: str):
         """创建agent实例"""
         if agent_type == "qwen":
-            from agents.qwen.qwen_agent import QwenAgent
+            from pywen.agents.qwen.qwen_agent import QwenAgent
             return QwenAgent(config)
         elif agent_type == "research":
-            from agents.research.google_research_agent import GeminiResearchDemo
+            from pywen.agents.research.google_research_agent import GeminiResearchDemo
             return GeminiResearchDemo(config)
+        elif agent_type == "claude":
+            from pywen.agents.claudecode.claude_code_agent import ClaudeCodeAgent
+            return ClaudeCodeAgent(config)
         else:
             raise ValueError(f"Unknown agent type: {agent_type}")
