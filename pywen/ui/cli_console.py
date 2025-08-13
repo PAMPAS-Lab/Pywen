@@ -114,11 +114,27 @@ class CLIConsole:
             self.console.print(text)
             self.log_execution(Text(f"🔄 Iteration {iteration} started", style="cyan"))
 
-    async def confirm_tool_call(self, tool_call) -> bool:
+    async def confirm_tool_call(self, tool_call, tool=None) -> bool:
         """Ask user to confirm tool execution."""
-        # Check if in YOLO mode
-        if hasattr(self, 'config') and self.config.get_approval_mode() == ApprovalMode.YOLO:
+        # Use new permission system if available
+        if hasattr(self, 'config') and hasattr(self.config, 'get_permission_manager'):
+            permission_manager = self.config.get_permission_manager()
+            tool_name = tool_call.name if hasattr(tool_call, 'name') else tool_call.get('name', 'unknown')
+            arguments = tool_call.arguments if hasattr(tool_call, 'arguments') else tool_call.get('arguments', {})
+
+            if permission_manager.should_auto_approve(tool_name, **arguments):
+                return True
+
+        # Fallback to old YOLO mode check for backward compatibility
+        elif hasattr(self, 'config') and self.config.get_approval_mode() == ApprovalMode.YOLO:
             return True
+
+        # Legacy tool risk level check
+        if tool:
+            from pywen.tools.base import ToolRiskLevel
+            risk_level = tool.get_risk_level(**tool_call.arguments if hasattr(tool_call, 'arguments') else tool_call.get('arguments', {}))
+            if risk_level == ToolRiskLevel.SAFE:
+                return True  # Auto-approve safe tools
         
         # Handle both dictionary and object cases
         if isinstance(tool_call, dict):
@@ -315,11 +331,52 @@ class CLIConsole:
         # Build status information
         context_percentage = max(0, 100 - (self.current_session_tokens * 100 // self.max_context_tokens))
         context_status = f"({context_percentage}% context left)"
+
+        # Get permission status
+        permission_status = ""
+        try:
+            if self.config and hasattr(self.config, 'get_permission_manager'):
+                permission_manager = self.config.get_permission_manager()
+                current_level = permission_manager.get_permission_level()
+
+                # Create compact permission status
+                permission_icons = {
+                    "locked": "🔒",
+                    "edit_only": "✏️",
+                    "planning": "📝",
+                    "yolo": "🚀"
+                }
+                icon = permission_icons.get(current_level.value, "❓")
+                permission_status = f"  {icon} {current_level.value.upper()}"
+            elif self.config:
+                # Fallback to old approval mode
+                approval_mode = self.config.get_approval_mode()
+                if approval_mode == ApprovalMode.YOLO:
+                    permission_status = "  🚀 YOLO"
+                else:
+                    permission_status = "  🔒 DEFAULT"
+        except Exception:
+            pass
+
         status_text = Text()
         status_text.append(display_dir, style="blue")
         status_text.append("  no sandbox (see /docs)", style="dim")
         status_text.append(f"  {model_name}", style="green")
         status_text.append(f"  {context_status}", style="dim")
+
+        # Add permission status with appropriate color
+        if permission_status:
+            if "🚀" in permission_status:
+                status_text.append(permission_status, style="green")
+            elif "🔒" in permission_status:
+                status_text.append(permission_status, style="red")
+            elif "✏️" in permission_status:
+                status_text.append(permission_status, style="yellow")
+            elif "🧠" in permission_status:
+                status_text.append(permission_status, style="blue")
+            else:
+                status_text.append(permission_status, style="dim")
+
         self.console.print(status_text)
         self.console.print()
 

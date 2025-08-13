@@ -683,12 +683,15 @@ class ClaudeCodeAgent(BaseAgent):
                 tool_results.append(result)
 
                 # Yield tool result event
+                # Use result.result if it's structured data, otherwise use result.content
+                result_data = result.result if hasattr(result, 'result') and result.result is not None else result.content
+
                 yield {
                     "type": "tool_result",
                     "data": {
                         "call_id": tool_call.get("id", "unknown"),
                         "name": tool_call["name"],
-                        "result": result.content,
+                        "result": result_data,
                         "success": True
                     },
                     "agent_type": self.type
@@ -846,6 +849,26 @@ class ClaudeCodeAgent(BaseAgent):
                     content=f"Error: {error_msg}",
                     tool_call_id=tool_call.get("id", "unknown")
                 )
+
+            # Check if tool needs confirmation
+            if hasattr(self, 'cli_console') and self.cli_console:
+                confirmation_details = await tool.get_confirmation_details(**tool_call.get("arguments", {}))
+                if confirmation_details:  # Only ask for confirmation if needed
+                    # Create a ToolCall-like object for confirmation
+                    from pywen.utils.tool_basics import ToolCall
+                    tool_call_obj = ToolCall(
+                        call_id=tool_call.get("id", "unknown"),
+                        name=tool_call["name"],
+                        arguments=tool_call.get("arguments", {})
+                    )
+                    confirmed = await self.cli_console.confirm_tool_call(tool_call_obj, tool)
+                    if not confirmed:
+                        # User rejected the tool execution
+                        return LLMMessage(
+                            role="tool",
+                            content="Tool execution was cancelled by user",
+                            tool_call_id=tool_call.get("id", "unknown")
+                        )
 
             # Execute tool
             result = await tool.execute(**tool_call.get("arguments", {}))

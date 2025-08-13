@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Dict, Any
 import os
+from pywen.core.permission_manager import PermissionLevel, PermissionManager
 
 
 class ModelProvider(Enum):
@@ -13,9 +14,10 @@ class ModelProvider(Enum):
     ANTHROPIC = "anthropic"
 
 
+# 保留 ApprovalMode 用于向后兼容，但标记为废弃
 class ApprovalMode(Enum):
-    DEFAULT = "default"  # 需要用户确认
-    YOLO = "yolo"       # 自动确认所有操作
+    DEFAULT = "default"  # 需要用户确认 -> 映射到 PermissionLevel.LOCKED
+    YOLO = "yolo"       # 自动确认所有操作 -> 映射到 PermissionLevel.YOLO
 
 
 @dataclass
@@ -40,19 +42,54 @@ class Config:
     log_level: str = "INFO"
     save_trajectories: bool = False
     trajectories_dir: str = "trajectories"
+
+    # 新的权限管理系统
+    permission_level: PermissionLevel = PermissionLevel.LOCKED
+
+    # 保留旧的 approval_mode 用于向后兼容
     approval_mode: ApprovalMode = ApprovalMode.DEFAULT
-    
+
     # Tool API Keys
     serper_api_key: Optional[str] = None
     jina_api_key: Optional[str] = None
+
+    def __post_init__(self):
+        """Initialize permission manager after dataclass creation."""
+        self._permission_manager = PermissionManager(self.permission_level)
     
+    def get_permission_manager(self) -> PermissionManager:
+        """Get permission manager instance."""
+        return self._permission_manager
+
+    def set_permission_level(self, level: PermissionLevel):
+        """Set permission level and update permission manager."""
+        self.permission_level = level
+        self._permission_manager.set_permission_level(level)
+
+        # 同步更新旧的 approval_mode 以保持兼容性
+        if level == PermissionLevel.YOLO:
+            self.approval_mode = ApprovalMode.YOLO
+        else:
+            self.approval_mode = ApprovalMode.DEFAULT
+
+    def get_permission_level(self) -> PermissionLevel:
+        """Get current permission level."""
+        return self.permission_level
+
+    # 保留旧方法用于向后兼容
     def get_approval_mode(self) -> ApprovalMode:
-        """Get current approval mode."""
+        """Get current approval mode (deprecated, use get_permission_level)."""
         return self.approval_mode
-    
+
     def set_approval_mode(self, mode: ApprovalMode):
-        """Set approval mode."""
+        """Set approval mode (deprecated, use set_permission_level)."""
         self.approval_mode = mode
+
+        # 映射到新的权限系统
+        if mode == ApprovalMode.YOLO:
+            self.set_permission_level(PermissionLevel.YOLO)
+        else:
+            self.set_permission_level(PermissionLevel.LOCKED)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Config':
@@ -77,7 +114,13 @@ class Config:
             log_level=data.get('log_level', "INFO"),
             save_trajectories=data.get('save_trajectories', False),
             trajectories_dir=data.get('trajectories_dir', "trajectories"),
+
+            # 新的权限系统
+            permission_level=PermissionLevel(data.get('permission_level', 'locked')),
+
+            # 向后兼容旧的 approval_mode
             approval_mode=ApprovalMode(data.get('approval_mode', "default")),
+
             serper_api_key=serper_api_key,
             jina_api_key=jina_api_key,
         )

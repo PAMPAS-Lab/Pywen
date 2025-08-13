@@ -2,12 +2,12 @@
 
 import os
 
-from .base import BaseTool, ToolResult
+from .base import BaseTool, ToolResult, ToolRiskLevel
 
 
 class WriteFileTool(BaseTool):
     """Tool for writing to files."""
-    
+
     def __init__(self):
         super().__init__(
             name="write_file",
@@ -26,7 +26,8 @@ class WriteFileTool(BaseTool):
                     }
                 },
                 "required": ["path", "content"]
-            }
+            },
+            risk_level=ToolRiskLevel.MEDIUM  # Writing files requires confirmation
         )
     
     async def execute(self, **kwargs) -> ToolResult:
@@ -41,18 +42,36 @@ class WriteFileTool(BaseTool):
             return ToolResult(call_id="", error="No content provided")
         
         try:
+            # Check if file exists to determine if this is a new file or overwrite
+            file_exists = os.path.exists(path)
+            old_content = ""
+            if file_exists:
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        old_content = f.read()
+                except:
+                    old_content = ""
+
             # Create directory if it doesn't exist
             directory = os.path.dirname(path)
             if directory and not os.path.exists(directory):
                 os.makedirs(directory)
-            
+
             # Write to file
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
-            
+
+            # Return detailed result
             return ToolResult(
                 call_id="",
-                result=f"Successfully wrote {len(content)} characters to {path}"
+                result={
+                    "message": f"Successfully wrote {len(content)} characters to {path}",
+                    "file_path": path,
+                    "content": content,
+                    "old_content": old_content if file_exists else None,
+                    "is_new_file": not file_exists,
+                    "operation": "write_file"
+                }
             )
         
         except Exception as e:
@@ -61,7 +80,7 @@ class WriteFileTool(BaseTool):
 
 class ReadFileTool(BaseTool):
     """Tool for reading files."""
-    
+
     def __init__(self):
         super().__init__(
             name="read_file",
@@ -76,7 +95,8 @@ class ReadFileTool(BaseTool):
                     }
                 },
                 "required": ["path"]
-            }
+            },
+            risk_level=ToolRiskLevel.SAFE  # Reading files is safe
         )
     
     async def execute(self, **kwargs) -> ToolResult:

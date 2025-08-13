@@ -748,27 +748,32 @@ Your core function is efficient and safe assistance. Balance extreme conciseness
                 "arguments": tool_call.arguments
             }}
             
-            # 如果不是YOLO模式，询问用户确认
+            # 检查是否需要用户确认（基于工具风险等级）
             if hasattr(self, 'cli_console') and self.cli_console:
-                confirmed = await self.cli_console.confirm_tool_call(tool_call)
-                if not confirmed:
-                    # 用户拒绝，跳过这个工具
-                    # Create cancelled tool result message and add to conversation history
-                    tool_msg = LLMMessage(
-                        role="tool",
-                        content="Tool execution was cancelled by user",
-                        tool_call_id=tool_call.call_id
-                    )
-                    self.conversation_history.append(tool_msg)
+                # 获取工具实例来检查风险等级
+                tool = self.tool_registry.get_tool(tool_call.name)
+                if tool:
+                    confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
+                    if confirmation_details:  # 只有需要确认的工具才询问用户
+                        confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
+                        if not confirmed:
+                                # 用户拒绝，跳过这个工具
+                                # Create cancelled tool result message and add to conversation history
+                                tool_msg = LLMMessage(
+                                    role="tool",
+                                    content="Tool execution was cancelled by user",
+                                    tool_call_id=tool_call.call_id
+                                )
+                                self.conversation_history.append(tool_msg)
 
-                    yield {"type": "tool_result", "data": {
-                        "call_id": tool_call.call_id,
-                        "name": tool_call.name,
-                        "result": "Tool execution rejected by user",
-                        "success": False,
-                        "error": "Tool execution rejected by user"
-                    }}
-                    continue
+                                yield {"type": "tool_result", "data": {
+                                    "call_id": tool_call.call_id,
+                                    "name": tool_call.name,
+                                    "result": "Tool execution rejected by user",
+                                    "success": False,
+                                    "error": "Tool execution rejected by user"
+                                }}
+                                continue
             
             try:
                 results = await self.tool_executor.execute_tools([tool_call])

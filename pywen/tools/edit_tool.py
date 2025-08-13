@@ -2,7 +2,7 @@
 
 import os
 
-from .base import BaseTool, ToolResult
+from .base import BaseTool, ToolResult, ToolRiskLevel
 
 
 class EditTool(BaseTool):
@@ -30,13 +30,10 @@ class EditTool(BaseTool):
                     }
                 },
                 "required": ["path", "old_str", "new_str"]
-            }
+            },
+            risk_level=ToolRiskLevel.MEDIUM  # Editing files requires confirmation
         )
-    
-    def is_risky(self, **kwargs) -> bool:
-        """File editing is considered risky."""
-        return True
-    
+
     async def execute(self, **kwargs) -> ToolResult:
         """Edit file by replacing text."""
         path = kwargs.get("path")
@@ -66,14 +63,21 @@ class EditTool(BaseTool):
             
             # Replace text
             new_content = content.replace(old_str, new_str)
-            
+
             # Write back to file
             with open(path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            
+
+            # Return detailed result with diff information
             return ToolResult(
                 call_id="",
-                result=f"Successfully replaced text in {path}"
+                result={
+                    "message": f"Successfully replaced text in {path}",
+                    "file_path": path,
+                    "old_text": old_str,
+                    "new_text": new_str,
+                    "operation": "edit_file"
+                }
             )
         
         except Exception as e:

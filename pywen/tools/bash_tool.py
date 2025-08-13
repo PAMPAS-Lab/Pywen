@@ -5,7 +5,7 @@ import os
 import locale
 import re
 
-from .base import BaseTool, ToolResult
+from .base import BaseTool, ToolResult, ToolRiskLevel
 
 
 class BashTool(BaseTool):
@@ -47,7 +47,8 @@ class BashTool(BaseTool):
                     }
                 },
                 "required": ["command"]
-            }
+            },
+            risk_level=ToolRiskLevel.LOW  # Default to low risk, will be elevated for dangerous commands
         )
         
         # 检测系统编码
@@ -63,11 +64,22 @@ class BashTool(BaseTool):
             except:
                 self._encoding = 'gbk'
     
-    def is_risky(self, **kwargs) -> bool:
-        """Check if command is risky."""
+    def get_risk_level(self, **kwargs) -> ToolRiskLevel:
+        """Get risk level based on the command."""
         command = kwargs.get("command", "")
-        risky_commands = ["rm", "del", "format", "fdisk", "mkfs", "dd", "shutdown", "reboot"]
-        return any(cmd in command.lower() for cmd in risky_commands)
+
+        # High risk commands
+        high_risk_commands = ["rm -rf", "del /s", "format", "fdisk", "mkfs", "dd", "shutdown", "reboot"]
+        if any(cmd in command.lower() for cmd in high_risk_commands):
+            return ToolRiskLevel.HIGH
+
+        # Medium risk commands
+        medium_risk_commands = ["rm", "del", "mv", "cp", "chmod", "chown", "sudo", "su"]
+        if any(cmd in command.lower() for cmd in medium_risk_commands):
+            return ToolRiskLevel.MEDIUM
+
+        # Default to low risk
+        return ToolRiskLevel.LOW
     
     async def execute(self, **kwargs) -> ToolResult:
         """Execute bash command with streaming output."""
