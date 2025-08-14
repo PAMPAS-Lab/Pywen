@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from pywen.utils.tool_basics import ToolCall, ToolResult
 from pywen.core.tool_registry import ToolRegistry
+from pywen.core.session_stats import session_stats
 
 
 @dataclass
@@ -31,7 +32,7 @@ class CoreToolScheduler:
         self.running_tasks: Dict[str, asyncio.Task] = {}
         self.max_concurrent_tasks = 5
     
-    async def schedule_tool_calls(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
+    async def schedule_tool_calls(self, tool_calls: List[ToolCall], agent_name: str = None) -> List[ToolResult]:
         """Schedule multiple tool calls for execution."""
         tasks = []
         for tool_call in tool_calls:
@@ -43,7 +44,7 @@ class CoreToolScheduler:
         
         # Execute tasks concurrently
         results = await asyncio.gather(
-            *[self._execute_task(task) for task in tasks],
+            *[self._execute_task(task, agent_name) for task in tasks],
             return_exceptions=True
         )
         
@@ -61,7 +62,7 @@ class CoreToolScheduler:
         
         return tool_results
     
-    async def _execute_task(self, task: ScheduledTask) -> ToolResult:
+    async def _execute_task(self, task: ScheduledTask, agent_name: str = None) -> ToolResult:
         """Execute a single scheduled task."""
         tool_call = task.tool_call
         tool = self.tool_registry.get_tool(tool_call.name)
@@ -76,9 +77,24 @@ class CoreToolScheduler:
         try:
             result = await tool.execute(**tool_call.arguments)
             result.tool_call_id = tool_call.call_id
+
+            # Record tool call in session stats
+            session_stats.record_tool_call(
+                tool_name=tool_call.name,
+                success=result.success,
+                agent_name=agent_name
+            )
+
             return result
-            
+
         except Exception as e:
+            # Record failed tool call in session stats
+            session_stats.record_tool_call(
+                tool_name=tool_call.name,
+                success=False,
+                agent_name=agent_name
+            )
+
             return ToolResult(
                 call_id=tool_call.call_id,
                 content="",

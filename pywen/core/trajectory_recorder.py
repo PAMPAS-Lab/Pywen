@@ -81,6 +81,7 @@ class TrajectoryRecorder:
         model: str,
         tools: Optional[List[Any]] = None,
         current_task: Optional[str] = None,
+        agent_name: Optional[str] = None,
     ):
         """Record an LLM interaction."""
         # 记录到session stats
@@ -88,7 +89,8 @@ class TrajectoryRecorder:
             provider=provider,
             model=model,
             usage=response.usage,
-            error=False
+            error=False,
+            agent_name=agent_name
         )
         interaction = {
             "timestamp": datetime.now().isoformat(),

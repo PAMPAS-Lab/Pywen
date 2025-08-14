@@ -7,6 +7,7 @@ from typing import List, Dict, Any
 from pywen.utils.tool_basics import ToolCall, ToolResult
 from pywen.core.tool_registry import ToolRegistry
 from pywen.core.tool_scheduler import CoreToolScheduler
+from pywen.core.session_stats import session_stats
 
 
 class NonInteractiveToolExecutor:
@@ -16,13 +17,13 @@ class NonInteractiveToolExecutor:
         self.tool_registry = tool_registry
         self.scheduler = CoreToolScheduler(tool_registry)
     
-    async def execute_tools(self, tool_calls: List[ToolCall]) -> List[ToolResult]:
+    async def execute_tools(self, tool_calls: List[ToolCall], agent_name: str = None) -> List[ToolResult]:
         """Execute multiple tool calls non-interactively."""
         if not tool_calls:
             return []
         
         # Use scheduler for execution
-        results = await self.scheduler.schedule_tool_calls(tool_calls)
+        results = await self.scheduler.schedule_tool_calls(tool_calls, agent_name)
         
         return results
     
@@ -34,7 +35,7 @@ class NonInteractiveToolExecutor:
         """Get function declarations for all available tools."""
         return self.tool_registry.get_function_declarations()
     
-    async def execute_tool_call(self, tool_call: ToolCall, console=None) -> ToolResult:
+    async def execute_tool_call(self, tool_call: ToolCall, console=None, agent_name: str = None) -> ToolResult:
         """Execute a tool call with confirmation if needed."""
         try:
             # 获取工具实例
@@ -56,9 +57,24 @@ class NonInteractiveToolExecutor:
             
             # 执行工具
             result = await tool.execute(**tool_call.arguments)
+
+            # Record tool call in session stats
+            session_stats.record_tool_call(
+                tool_name=tool_call.name,
+                success=result.success,
+                agent_name=agent_name
+            )
+
             return result
         
         except Exception as e:
+            # Record failed tool call in session stats
+            session_stats.record_tool_call(
+                tool_name=tool_call.name,
+                success=False,
+                agent_name=agent_name
+            )
+
             return ToolResult(
                 call_id=tool_call.call_id,
                 error=str(e)

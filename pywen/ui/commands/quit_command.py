@@ -36,8 +36,28 @@ class QuitCommand(BaseCommand):
             padding=(1, 2)
         )
         
-        # Get session statistics
-        stats_summary = session_stats.get_stats_summary()
+        # Get complete session statistics with agent breakdown
+        stats_content = []
+
+        # Session overview
+        session_overview = session_stats.get_stats_summary()
+        stats_content.append(session_overview)
+
+        # Agent breakdown if multiple agents were used
+        if len(session_stats.agents) > 1:
+            stats_content.append("\n" + "─" * 80 + "\n")
+            agent_breakdown = session_stats.get_agent_stats_summary()
+            stats_content.append(agent_breakdown)
+        elif len(session_stats.agents) == 1:
+            # Show single agent details
+            stats_content.append("\n" + "─" * 80 + "\n")
+            agent_name = list(session_stats.agents.keys())[0]
+            agent_stats = session_stats.agents[agent_name]
+            stats_content.append(f"[bold cyan]Agent Used: {agent_name}[/bold cyan]")
+            stats_content.append(f"Tasks Completed: [green]{agent_stats.total_tasks}[/green]")
+            stats_content.append(f"Session Duration: [dim]{agent_stats.last_used - agent_stats.first_used}[/dim]")
+
+        stats_summary = "\n".join(stats_content)
         stats_panel = Panel(
             stats_summary,
             title="📊 Final Session Statistics",

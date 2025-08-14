@@ -10,6 +10,7 @@ from rich.table import Table
 from rich.text import Text
 
 from pywen.config.config import Config, ApprovalMode
+from pywen.ui.highlighted_content import create_enhanced_tool_result_display
 
 
 
@@ -415,4 +416,154 @@ class CLIConsole:
                     self.console.print(f"  [cyan]{key}[/cyan]: {value}")
         else:
             self.console.print("No arguments")
+
+    async def handle_streaming_event(self, event, agent=None):
+        """Handle streaming events from agent."""
+        event_type = event.get("type")
+        data = event.get("data", {})
+
+        if agent.type == "QwenAgent" or agent.type == "ClaudeCodeAgent":
+
+            if event_type == "user_message":
+                self.print(f"🔵 User:{data['message']}", "blue", True)
+                self.print("")
+
+            elif event_type == "task_continuation":
+                self.print(f"🔄 Continuing Task (Turn {data['turn']}):", "yellow", True)
+                self.print(f"{data['message']}")
+                self.print("")
+
+            elif event_type == "llm_stream_start":
+                print("🤖 ", end="", flush=True)
+
+            elif event_type == "llm_chunk":
+                print(data["content"], end="", flush=True)
+
+            elif event_type == "tool_result":
+                self.display_tool_result(data)
+
+            elif event_type == "waiting_for_user":
+                self.print(f"💭{data['reasoning']}", "yellow")
+                self.print("")
+                return "waiting_for_user"
+
+            elif event_type == "model_continues":
+                self.print(f"🔄 Model continues: {data['reasoning']}", "cyan")
+                if data.get('next_action'):
+                    self.print(f"🎯 Next: {data['next_action'][:100]}...", "dim")
+                self.print("")
+
+            elif event_type == "task_complete":
+                self.print(f"\n✅ Task completed!", "green", True)
+                self.print("")
+                return "task_complete"
+
+            elif event_type == "max_turns_reached":
+                self.print(f"⚠️ Maximum turns reached", "yellow", True)
+                self.print("")
+                return "max_turns_reached"
+
+            elif event_type == "error":
+                self.print(f"❌ Error: {data['error']}", "red")
+                self.print("")
+                return "error"
+
+            elif event_type == "trajectory_saved":
+                # Only show trajectory save info at task start
+                if data.get('is_task_start', False):
+                    self.print(f"✅ Trajectory saved to: {data['path']}", "dim")
+
+        elif agent.type == "GeminiResearchDemo":
+            if event_type == "user_message":
+                self.print(f"🔵 User:{data['message']}", "blue", True)
+                self.print("")
+            elif event_type == "query":
+                self.print(f"🔍Query: {data['queries']}", "blue")
+                self.print("")
+            elif event_type == "search":
+                self.print(f"{data['content']}")
+            elif event_type == "fetch":
+                self.print(f"{data['content']}")
+            elif event_type == "summary_start":
+                print("\n📝Summary:", end="", flush=True)
+            elif event_type == "summary_chunk":
+                print(data["content"], end="", flush=True)
+            elif event_type == "tool_call":
+                self.print("")
+                self.handle_tool_call_event(data)
+            elif event_type == "tool_result":
+                self.display_tool_result(data)
+            elif event_type == "final_answer_start":
+                print("\n📄final answer:", end="", flush=True)
+            elif event_type == "final_answer_chunk":
+                print(data["content"], end="", flush=True)
+            elif event_type == "error":
+                self.print(f"❌ Error: {data['error']}", "red")
+
+        return None
+
+    def display_tool_result(self, data: dict):
+        """Display tool execution result."""
+        if data["success"]:
+            tool_name = data.get('name', 'Tool')
+            result = data.get('result', '')
+
+            # Enhanced result display with highlighted content for file operations
+            if isinstance(result, dict) and result.get('operation') in ['write_file', 'edit_file']:
+                panel = create_enhanced_tool_result_display(result, tool_name)
+            else:
+                # Simple result display for other tools
+                panel = Panel(
+                    Text(str(result)),
+                    title=f"✓ {tool_name}",
+                    title_align="left",
+                    border_style="green",
+                    padding=(0, 1)
+                )
+
+            self.console.print(panel)
+        else:
+            # Error case with red border
+            tool_name = data.get('name', 'Tool')
+            error = data.get('error', 'Unknown error')
+
+            panel = Panel(
+                str(error),
+                title=f"✗ {tool_name}",
+                title_align="left",
+                border_style="red",
+                padding=(0, 1)
+            )
+            self.console.print(panel)
+
+    def handle_tool_call_event(self, data: dict):
+        """Handle tool call event display."""
+        tool_call = data.get('tool_call', None)
+        tool_name = tool_call.name
+        arguments = tool_call.arguments
+
+        # Special handling for bash tool to show specific command
+        if tool_name == "bash" and "command" in arguments:
+            command = arguments["command"]
+
+            # Create framed bash command display
+            panel = Panel(
+                f"[cyan]{command}[/cyan]",
+                title=f"🔧 {tool_name}",
+                title_align="left",
+                border_style="yellow",
+                padding=(0, 1)
+            )
+            self.console.print(panel)
+        else:
+            # Normal display for other tools
+            args_str = str(arguments)
+            panel = Panel(
+                args_str,
+                title=f"🔧 {tool_name}",
+                title_align="left",
+                border_style="yellow",
+                padding=(0, 1)
+            )
+            self.console.print(panel)
 

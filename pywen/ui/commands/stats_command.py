@@ -31,8 +31,13 @@ class StatsCommand(BaseCommand):
             panel = self._get_api_stats_panel()
         elif args in ["token", "tokens"]:
             panel = self._get_token_stats_panel()
-        else:
+        elif args in ["agent", "agents"]:
+            panel = self._get_agent_stats_panel()
+        elif args in ["all", "session"]:
             panel = self._get_summary_panel()
+        else:
+            # Default: show current agent stats if available, otherwise show summary
+            panel = self._get_current_agent_stats_panel()
         
         self.console.print(panel)
         return True
@@ -192,6 +197,139 @@ class StatsCommand(BaseCommand):
             content = table
         
         return Panel(content, title="🎯 Token Statistics", border_style="yellow", padding=(1, 2))
+
+    def _get_agent_stats_panel(self) -> Panel:
+        """Get detailed agent statistics panel."""
+        if not session_stats.agents:
+            content = "[yellow]No agent statistics available.[/yellow]"
+        else:
+            content = []
+
+            # Session info
+            content.append(f"[bold cyan]Current Agent:[/bold cyan] {session_stats.current_agent or 'None'}")
+            content.append(f"[bold cyan]Session Duration:[/bold cyan] {session_stats.session_duration}")
+            content.append("")
+
+            # Agent breakdown
+            content.append("[bold magenta]🤖 Agent Statistics[/bold magenta]")
+
+            for agent_name, agent_stats in sorted(session_stats.agents.items()):
+                content.append(f"\n[bold cyan]{agent_name}[/bold cyan]")
+                content.append(f"  Tasks: [green]{agent_stats.total_tasks}[/green]")
+                content.append(f"  First used: [dim]{agent_stats.first_used.strftime('%H:%M:%S')}[/dim]")
+                content.append(f"  Last used: [dim]{agent_stats.last_used.strftime('%H:%M:%S')}[/dim]")
+
+                # API stats
+                if agent_stats.api.total_requests > 0:
+                    content.append(f"  API Requests: [green]{agent_stats.api.total_requests}[/green]")
+                    if agent_stats.api.total_errors > 0:
+                        content.append(f"  API Errors: [red]{agent_stats.api.total_errors}[/red] ({agent_stats.api.error_rate:.1f}%)")
+
+                # Token stats
+                if agent_stats.tokens.total_tokens > 0:
+                    content.append(f"  Total Tokens: [yellow]{agent_stats.tokens.total_tokens:,}[/yellow]")
+                    content.append(f"    Input: [cyan]{agent_stats.tokens.input_tokens:,}[/cyan], Output: [magenta]{agent_stats.tokens.output_tokens:,}[/magenta]")
+                    if agent_stats.tokens.cached_tokens > 0:
+                        cache_rate = (agent_stats.tokens.cached_tokens / agent_stats.tokens.input_tokens * 100) if agent_stats.tokens.input_tokens > 0 else 0
+                        content.append(f"    Cached: [blue]{agent_stats.tokens.cached_tokens:,} ({cache_rate:.1f}%)[/blue]")
+
+                # Tool stats
+                if agent_stats.tools.total_calls > 0:
+                    content.append(f"  Tool Calls: [green]{agent_stats.tools.total_calls}[/green] ({agent_stats.tools.success_rate:.1f}% success)")
+
+                    # Top 3 tools
+                    if agent_stats.tools.by_name:
+                        top_tools = sorted(agent_stats.tools.by_name.items(), key=lambda x: x[1]['calls'], reverse=True)[:3]
+                        tool_list = []
+                        for tool_name, stats in top_tools:
+                            tool_list.append(f"{tool_name}({stats['calls']})")
+                        content.append(f"    Top tools: [dim]{', '.join(tool_list)}[/dim]")
+
+                # Model stats
+                if agent_stats.models_used:
+                    model_list = []
+                    for model, stats in agent_stats.models_used.items():
+                        model_list.append(f"{model}({stats.total_tokens:,})")
+                    content.append(f"  Models: [dim]{', '.join(model_list)}[/dim]")
+
+            content = "\n".join(content)
+
+        return Panel(content, title="🤖 Agent Statistics", border_style="magenta", padding=(1, 2))
+
+    def _get_current_agent_stats_panel(self) -> Panel:
+        """Get statistics for the current active agent."""
+        current_agent = session_stats.current_agent
+
+        if not current_agent or current_agent not in session_stats.agents:
+            # Fallback to session summary if no current agent
+            return self._get_summary_panel()
+
+        agent_stats = session_stats.agents[current_agent]
+        content = []
+
+        # Agent header
+        content.append(f"[bold cyan]Current Agent: {current_agent}[/bold cyan]")
+        content.append(f"Session Duration: [dim]{session_stats.session_duration}[/dim]")
+        content.append("")
+
+        # Tasks
+        content.append(f"[bold green]📋 Tasks Completed: {agent_stats.total_tasks}[/bold green]")
+        content.append(f"First used: [dim]{agent_stats.first_used.strftime('%H:%M:%S')}[/dim]")
+        content.append(f"Last used: [dim]{agent_stats.last_used.strftime('%H:%M:%S')}[/dim]")
+        content.append("")
+
+        # API stats
+        if agent_stats.api.total_requests > 0:
+            content.append("[bold blue]🔗 API Statistics[/bold blue]")
+            content.append(f"  Total Requests: [green]{agent_stats.api.total_requests}[/green]")
+            if agent_stats.api.total_errors > 0:
+                content.append(f"  Errors: [red]{agent_stats.api.total_errors}[/red] ({agent_stats.api.error_rate:.1f}%)")
+            else:
+                content.append(f"  Error Rate: [green]0.0%[/green]")
+            content.append("")
+
+        # Token stats
+        if agent_stats.tokens.total_tokens > 0:
+            content.append("[bold yellow]🎯 Token Usage[/bold yellow]")
+            content.append(f"  Total: [yellow]{agent_stats.tokens.total_tokens:,}[/yellow]")
+            content.append(f"  Input: [cyan]{agent_stats.tokens.input_tokens:,}[/cyan]")
+            content.append(f"  Output: [magenta]{agent_stats.tokens.output_tokens:,}[/magenta]")
+
+            if agent_stats.tokens.cached_tokens > 0:
+                cache_rate = (agent_stats.tokens.cached_tokens / agent_stats.tokens.input_tokens * 100) if agent_stats.tokens.input_tokens > 0 else 0
+                content.append(f"  Cached: [blue]{agent_stats.tokens.cached_tokens:,} ({cache_rate:.1f}%)[/blue]")
+
+            if agent_stats.tokens.reasoning_tokens > 0:
+                content.append(f"  Reasoning: [purple]{agent_stats.tokens.reasoning_tokens:,}[/purple]")
+            content.append("")
+
+        # Tool stats
+        if agent_stats.tools.total_calls > 0:
+            content.append("[bold green]🛠️ Tool Usage[/bold green]")
+            content.append(f"  Total Calls: [green]{agent_stats.tools.total_calls}[/green]")
+            content.append(f"  Success Rate: [green]{agent_stats.tools.success_rate:.1f}%[/green]")
+
+            if agent_stats.tools.by_name:
+                content.append("  Tool Breakdown:")
+                # Show all tools used by this agent
+                for tool_name, stats in sorted(agent_stats.tools.by_name.items(), key=lambda x: x[1]['calls'], reverse=True):
+                    success_rate = (stats['success'] / stats['calls'] * 100) if stats['calls'] > 0 else 0
+                    content.append(f"    {tool_name}: [cyan]{stats['calls']} calls[/cyan], [green]{success_rate:.1f}% success[/green]")
+            content.append("")
+
+        # Model stats
+        if agent_stats.models_used:
+            content.append("[bold purple]🤖 Model Usage[/bold purple]")
+            for model, stats in agent_stats.models_used.items():
+                content.append(f"  {model}:")
+                content.append(f"    Total: [yellow]{stats.total_tokens:,} tokens[/yellow]")
+                content.append(f"    Input: [cyan]{stats.input_tokens:,}[/cyan], Output: [magenta]{stats.output_tokens:,}[/magenta]")
+                if stats.cached_tokens > 0:
+                    cache_rate = (stats.cached_tokens / stats.input_tokens * 100) if stats.input_tokens > 0 else 0
+                    content.append(f"    Cached: [blue]{stats.cached_tokens:,} ({cache_rate:.1f}%)[/blue]")
+
+        content_str = "\n".join(content)
+        return Panel(content_str, title=f"📊 {current_agent} Statistics", border_style="cyan", padding=(1, 2))
     
     def get_help(self) -> str:
         """Get help text for the stats command."""
@@ -201,14 +339,18 @@ Usage: /stats [subcommand]
 Display session statistics including token usage, API calls, and tool usage.
 
 Subcommands:
-  (none)    - Show complete statistics summary
+  (none)    - Show current agent statistics
+  all       - Show complete session statistics summary
   model     - Show detailed model usage statistics
   tools     - Show detailed tool usage statistics
   api       - Show detailed API call statistics
   tokens    - Show detailed token usage statistics
+  agents    - Show detailed agent usage statistics
 
 Examples:
-  /stats           # Show complete summary
+  /stats           # Show current agent stats
+  /stats all       # Show complete session summary
   /stats model     # Show model-specific stats
   /stats tools     # Show tool usage breakdown
+  /stats agents    # Show all agent stats
 """

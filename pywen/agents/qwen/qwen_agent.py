@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 import uuid
 from pywen.utils.token_limits import TokenLimits, ModelProvider
+from pywen.core.session_stats import session_stats
 
 class EventType(Enum):
     """Types of events during agent execution."""
@@ -41,6 +42,9 @@ class QwenAgent(BaseAgent):
         # Initialize shared components via base class (includes tool setup)
         super().__init__(config, cli_console)
         self.type = "QwenAgent"
+
+        # Register this agent with session stats
+        session_stats.set_current_agent(self.type)
         # QwenAgent specific initialization (before calling super)
         self.max_task_turns = getattr(config, 'max_task_turns', 5)
         self.current_task_turns = 0
@@ -100,6 +104,9 @@ class QwenAgent(BaseAgent):
         # Reset task tracking for new user input
         self.original_user_task = user_message
         self.current_task_turns = 0
+
+        # Record task start in session stats
+        session_stats.record_task_start(self.type)
         
         # Reset loop detection for new task
         self.loop_detector.reset()
@@ -699,13 +706,14 @@ Your core function is efficient and safe assistance. Balance extreme conciseness
                     turn.add_assistant_response(final_response)
                     self.cli_console.update_token_usage(final_response.usage.input_tokens)
                     #print(final_response)
-                    # 记录LLM交互
+                    # 记录LLM交互 (session stats 会在 trajectory_recorder 中自动记录)
                     self.trajectory_recorder.record_llm_interaction(
                         messages=messages,
                         response=final_response,
                         provider=self.config.model_config.provider.value,
                         model=self.config.model_config.model,
-                        tools=available_tools
+                        tools=available_tools,
+                        agent_name=self.type
                     )
                     
                     # 添加到对话历史
@@ -776,8 +784,10 @@ Your core function is efficient and safe assistance. Balance extreme conciseness
                                 continue
             
             try:
-                results = await self.tool_executor.execute_tools([tool_call])
+                # 工具执行 (session stats 会在 tool_scheduler 中自动记录)
+                results = await self.tool_executor.execute_tools([tool_call], self.type)
                 result = results[0]
+
                 # 立即发送工具结果
                 yield {"type": "tool_result", "data": {
                     "call_id": tool_call.call_id,
@@ -786,7 +796,7 @@ Your core function is efficient and safe assistance. Balance extreme conciseness
                     "success": result.success,
                     "error": result.error
                 }}
-                
+
                 turn.add_tool_result(result)
                 
                 # 添加到对话历史

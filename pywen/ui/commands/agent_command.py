@@ -2,6 +2,7 @@
 
 from rich.console import Console
 from .base_command import BaseCommand
+from pywen.core.session_stats import session_stats
 from typing import Dict, Any
 
 # 可用agent配置
@@ -74,7 +75,10 @@ class AgentCommand(BaseCommand):
             # 更新context中的agent
             context['agent'] = new_agent
             context['current_agent_type'] = new_agent_type
-            
+
+            # 更新session stats中的当前agent
+            session_stats.set_current_agent(new_agent.type)
+
             agent_name = AVAILABLE_AGENTS[new_agent_type]["name"]
             self.console.print(f"[green]Switched to {agent_name}[/green]")
             

@@ -19,7 +19,7 @@ from pywen.agents.qwen.qwen_agent import QwenAgent
 from pywen.ui.cli_console import CLIConsole
 from pywen.ui.command_processor import CommandProcessor
 from pywen.ui.utils.keyboard import create_key_bindings
-from pywen.ui.highlighted_content import create_enhanced_tool_result_display
+
 
 
 def generate_session_id() -> str:
@@ -261,7 +261,7 @@ async def execute_streaming_with_cancellation(agent, user_input, console, cancel
                 return "cancelled"
             
             # Handle streaming event
-            result = await handle_streaming_event(event, console, agent)
+            result = await console.handle_streaming_event(event, agent)
             
             if result == "tool_cancelled":
                 return "tool_cancelled"
@@ -284,168 +284,6 @@ async def execute_streaming_with_cancellation(agent, user_input, console, cancel
         return "error"
 
 
-async def handle_streaming_event(event, console, agent=None):
-    """Handle streaming events from agent."""
-    event_type = event.get("type")
-    data = event.get("data", {})
-
-    if agent.type == "QwenAgent" or agent.type == "ClaudeCodeAgent":
-
-        if event_type == "user_message":
-            console.print(f"🔵 User:{data['message']}","blue",True)
-            console.print("")
-
-        elif event_type == "task_continuation":
-            console.print(f"🔄 Continuing Task (Turn {data['turn']}):","yellow",True)
-            console.print(f"{data['message']}")
-            console.print("")
-
-        elif event_type == "llm_stream_start":
-            print("🤖 ", end="", flush=True)
-
-        elif event_type == "llm_chunk":
-            print(data["content"], end="", flush=True)
-
-        elif event_type == "tool_result":
-            display_tool_result(data, console)
-
-        elif event_type == "waiting_for_user":
-            console.print(f"💭{data['reasoning']}","yellow")
-            console.print("")
-            return "waiting_for_user"
-
-        elif event_type == "model_continues":
-            console.print(f"🔄 Model continues: {data['reasoning']}","cyan")
-            if data.get('next_action'):
-                console.print(f"🎯 Next: {data['next_action'][:100]}...","dim")
-            console.print("")
-
-        elif event_type == "task_complete":
-            console.print(f"\n✅ Task completed!","green",True)
-            console.print("")
-            return "task_complete"
-
-        elif event_type == "max_turns_reached":
-            console.print(f"⚠️ Maximum turns reached","yellow",True)
-            console.print("")
-            return "max_turns_reached"
-
-        elif event_type == "error":
-            console.print(f"❌ Error: {data['error']}","red")
-            console.print("")
-            return "error"
-
-        elif event_type == "trajectory_saved":
-            # Only show trajectory save info at task start
-            if data.get('is_task_start', False):
-                console.print(f"✅ Trajectory saved to: {data['path']}","dim")
-
-
-    elif agent.type == "GeminiResearchDemo":
-        if event_type == "user_message":
-            console.print(f"🔵 User:{data['message']}","blue", True)
-            console.print("")
-        elif event_type == "query":
-            console.print(f"🔍Query: {data['queries']}","blue")
-            console.print("")
-        elif event_type == "search":
-            console.print(f"{data['content']}")
-        elif event_type == "fetch":
-            console.print(f"{data['content']}")
-        elif event_type == "summary_start":
-            print("\n📝Summary:", end="", flush=True)
-        elif event_type == "summary_chunk":
-            print(data["content"], end="", flush=True)
-        elif event_type == "tool_call":
-            console.print("")
-            handle_tool_call_event(data, console)
-        elif event_type == "tool_result":
-            display_tool_result(data, console)
-        elif event_type == "final_answer_start":
-            print("\n📄final answer:", end="", flush=True)
-        elif event_type == "final_answer_chunk":
-            print(data["content"], end="", flush=True)
-        elif event_type == "error":
-            console.print(f"❌ Error: {data['error']}",color="red")
-
-
-
-    return None
-
-
-def display_tool_result(data: dict, console: CLIConsole):
-    """Display tool execution result."""
-    if data["success"]:
-        from rich.panel import Panel
-        from rich.text import Text
-
-        tool_name = data.get('name', 'Tool')
-        result = data.get('result', '')
-
-        # Enhanced result display with highlighted content for file operations
-        if isinstance(result, dict) and result.get('operation') in ['write_file', 'edit_file']:
-            panel = create_enhanced_tool_result_display(result, tool_name)
-        else:
-            # Simple result display for other tools
-            panel = Panel(
-                Text(str(result)),
-                title=f"✓ {tool_name}",
-                title_align="left",
-                border_style="green",
-                padding=(0, 1)
-            )
-
-        console.console.print(panel)
-    else:
-        # Error case with red border
-        from rich.panel import Panel
-        tool_name = data.get('name', 'Tool')
-        error = data.get('error', 'Unknown error')
-        
-        panel = Panel(
-            str(error),
-            title=f"✗ {tool_name}",
-            title_align="left", 
-            border_style="red",
-            padding=(0, 1)
-        )
-        console.console.print(panel)
-
-
-def handle_tool_call_event(data: dict, console: CLIConsole):
-    """Handle tool call event display."""
-    tool_call = data.get('tool_call', None)
-    tool_name = tool_call.name
-    arguments = tool_call.arguments
-    
-    # Special handling for bash tool to show specific command
-    if tool_name == "bash" and "command" in arguments:
-        command = arguments["command"]
-        
-        # Create framed bash command display
-        from rich.panel import Panel
-        panel = Panel(
-            f"[cyan]{command}[/cyan]",
-            title=f"🔧 {tool_name}",
-            title_align="left",
-            border_style="yellow",
-            padding=(0, 1)
-        )
-        console.console.print(panel)
-    else:
-        # Normal display for other tools
-        args_str = str(arguments)
-        from rich.panel import Panel
-        panel = Panel(
-            args_str,
-            title=f"🔧 {tool_name}",
-            title_align="left",
-            border_style="yellow", 
-            padding=(0, 1)
-        )
-        console.console.print(panel)
-
-
 async def single_prompt_mode_streaming(agent, console: CLIConsole, prompt_text: str):
     """Run agent in single prompt mode with streaming."""
 
@@ -458,7 +296,7 @@ async def single_prompt_mode_streaming(agent, console: CLIConsole, prompt_text: 
     # Execute user request
     async for event in agent.run(prompt_text):
         # Handle streaming events
-        await handle_streaming_event(event, console, agent)
+        await console.handle_streaming_event(event, agent)
 
 if __name__ == "__main__":
     main_sync()

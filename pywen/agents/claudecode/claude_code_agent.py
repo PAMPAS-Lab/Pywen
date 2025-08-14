@@ -14,6 +14,7 @@ from pywen.utils.tool_basics import ToolCall
 from pywen.core.trajectory_recorder import TrajectoryRecorder
 from .prompts import ClaudeCodePrompts
 from .context_manager import ClaudeCodeContextManager
+from pywen.core.session_stats import session_stats
 
 
 
@@ -46,6 +47,9 @@ class ClaudeCodeAgent(BaseAgent):
         self.tools = self.tool_registry.list_tools()
 
         self._update_context()
+
+        # Register this agent with session stats
+        session_stats.set_current_agent(self.type)
 
     def _setup_claude_code_tools(self):
         """Setup Claude Code specific tools and configure them."""
@@ -108,6 +112,9 @@ class ClaudeCodeAgent(BaseAgent):
                 model=self.config.model_config.model,
                 max_steps=self.max_iterations
             )
+
+            # Record task start in session stats
+            session_stats.record_task_start(self.type)
 
             # Yield trajectory saved event
             yield {
@@ -197,10 +204,11 @@ class ClaudeCodeAgent(BaseAgent):
                     # Extract final response
                     assistant_message = response_event["assistant_message"]
                     tool_calls = response_event["tool_calls"]
+                    final_response = response_event.get("final_response")
 
             # 📝 TRAJECTORY: Record LLM interaction
             if assistant_message:
-                # Create LLMResponse object for trajectory recording
+                # Create LLMResponse object for trajectory recording with usage info
                 llm_response = LLMResponse(
                     content=assistant_message.content or "",
                     tool_calls=[ToolCall(
@@ -209,16 +217,19 @@ class ClaudeCodeAgent(BaseAgent):
                         arguments=tc.get("arguments", {})
                     ) for tc in tool_calls] if tool_calls else None,
                     model=self.config.model_config.model,
-                    finish_reason="stop"
+                    finish_reason="stop",
+                    usage=final_response.usage if final_response and hasattr(final_response, 'usage') else None
                 )
 
+                # 记录LLM交互 (session stats 会在 trajectory_recorder 中自动记录)
                 self.trajectory_recorder.record_llm_interaction(
                     messages=messages,
                     response=llm_response,
                     provider=self.config.model_config.provider.value,
                     model=self.config.model_config.model,
                     tools=self.tools,
-                    current_task=f"Processing query at depth {depth}"
+                    current_task=f"Processing query at depth {depth}",
+                    agent_name=self.type
                 )
 
 
@@ -350,11 +361,12 @@ class ClaudeCodeAgent(BaseAgent):
                             "arguments": tc.arguments
                         })
 
-                # 返回最终的assistant_response事件
+                # 返回最终的assistant_response事件，包含usage信息
                 yield {
                     "type": "assistant_response",
                     "assistant_message": assistant_msg,
-                    "tool_calls": tool_calls
+                    "tool_calls": tool_calls,
+                    "final_response": final_response  # 包含完整的响应对象，包括usage
                 }
 
         except Exception as e:
@@ -596,6 +608,8 @@ class ClaudeCodeAgent(BaseAgent):
                 # Check if it's an error result
                 is_success = not (result_content.startswith("Error:") if result_content else False)
 
+                # 工具执行统计会在 tool_scheduler 中自动记录
+
                 yield {
                     "type": "tool_result",
                     "data": {
@@ -604,7 +618,7 @@ class ClaudeCodeAgent(BaseAgent):
                         "result": result_content,
                         "success": is_success
                     },
-                    
+
                 }
 
                 # Check for abort signal between tool executions
@@ -782,7 +796,7 @@ class ClaudeCodeAgent(BaseAgent):
                             )
 
             # Use tool executor (same pattern as QwenAgent and original Claude Code)
-            results = await self.tool_executor.execute_tools([tool_call_obj])
+            results = await self.tool_executor.execute_tools([tool_call_obj], self.type)
             result = results[0]
 
             # Convert ToolResult to LLMMessage with proper content extraction
