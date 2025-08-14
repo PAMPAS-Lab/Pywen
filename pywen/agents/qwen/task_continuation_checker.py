@@ -132,7 +132,7 @@ Respond in JSON format:
             # Format the check prompt
             check_prompt = self.CHECK_PROMPT.format(
                 original_task=original_task,
-                last_response=last_response[:1000],  # Limit length
+                last_response=last_response,  # 移除长度限制
                 conversation_summary=conversation_summary
             )
             
@@ -253,15 +253,13 @@ Respond in JSON format:
         if not conversation_history:
             return "No conversation history available."
         
-        # Take last few messages to avoid token limits
-        recent_messages = conversation_history[-6:]  # Last 6 messages
-        
+        # 移除消息数量限制，使用完整对话历史
         summary_parts = []
-        for msg in recent_messages:
+        for msg in conversation_history:
             role = msg.role.upper()
-            content = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+            content = msg.content  # 移除内容长度限制
             summary_parts.append(f"{role}: {content}")
-        
+
         return "\n".join(summary_parts)
     
     def should_continue_based_on_heuristics(
@@ -307,12 +305,12 @@ Respond in JSON format:
         elif seems_incomplete:
             should_continue = True
             reasoning = "Response contains incompleteness indicators"
-        elif is_research_task and turn_count < 3 and len(last_response) < 1000:
+        elif is_research_task and turn_count < 3:
             should_continue = True
             reasoning = "Research task needs multiple iterations"
-        elif turn_count == 1 and len(last_response) < 500:
+        elif turn_count == 1:
             should_continue = True
-            reasoning = "First turn with short response likely needs more"
+            reasoning = "First turn likely needs more development"
         else:
             should_continue = False
             reasoning = "Default to not continuing"

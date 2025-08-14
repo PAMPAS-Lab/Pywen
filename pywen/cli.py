@@ -289,7 +289,7 @@ async def handle_streaming_event(event, console, agent=None):
     event_type = event.get("type")
     data = event.get("data", {})
 
-    if agent.type == "QwenAgent":
+    if agent.type == "QwenAgent" or agent.type == "ClaudeCodeAgent":
 
         if event_type == "user_message":
             console.print(f"🔵 User:{data['message']}","blue",True)
@@ -340,127 +340,6 @@ async def handle_streaming_event(event, console, agent=None):
             if data.get('is_task_start', False):
                 console.print(f"✅ Trajectory saved to: {data['path']}","dim")
 
-    elif agent.type == "ClaudeCodeAgent":
-        # Handle Claude Code Agent events
-        if event_type == "llm_stream_start":
-            # Start of LLM streaming
-            print("🧠 ", end="", flush=True)
-            console._claude_started = True
-
-        elif event_type == "llm_chunk":
-            # Streaming content chunk
-            content = data.get("content", "")
-            if content:
-                print(content, end="", flush=True)
-
-        elif event_type == "content":
-            # Non-streaming content from Claude Code Agent
-            content = event.get("content", "")
-            if content:  # Only print if there's actual content
-                # Add Claude icon at the start of first content
-                if not hasattr(console, '_claude_started'):
-                    print("🧠 ", end="", flush=True)
-                    console._claude_started = True
-                print(content, end="", flush=True)
-
-        elif event_type == "tool_call":
-            # Handle tool call display
-            tool_call = event.get("tool_call", {})
-            tool_name = tool_call.get("name", "Unknown")
-            arguments = tool_call.get("arguments", {})
-
-            # Create tool call display
-            from rich.panel import Panel
-            args_display = str(arguments) if arguments else "No arguments"
-            panel = Panel(
-                args_display,
-                title=f"🔧 {tool_name}",
-                title_align="left",
-                border_style="yellow",
-                padding=(0, 1)
-            )
-            console.console.print(panel)
-
-        elif event_type == "tool_call_start":
-            # Tool call announced (before execution)
-            tool_data = event.get("data", {})
-            tool_name = tool_data.get("name", "Unknown")
-            arguments = tool_data.get("arguments", {})
-
-            # Create tool call display
-            from rich.panel import Panel
-            args_display = str(arguments) if arguments else "No arguments"
-            panel = Panel(
-                args_display,
-                title=f"🔧 {tool_name}",
-                title_align="left",
-                border_style="yellow",
-                padding=(0, 1)
-            )
-            console.console.print(panel)
-
-        elif event_type == "tool_start":
-            # Tool execution started
-            tool_data = event.get("data", {})
-            tool_name = tool_data.get("name", event.get("tool_name", "Unknown"))
-            console.print(f"🔧 Executing {tool_name}...", "yellow")
-
-        elif event_type == "tool_result":
-            # Tool execution completed
-            tool_data = event.get("data", {})
-            tool_name = tool_data.get("name", event.get("tool_name", "Tool"))
-            result = tool_data.get("result", event.get("result", ""))
-            success = tool_data.get("success", True)
-
-            # Use existing display_tool_result function
-            display_data = {
-                "success": success,
-                "name": tool_name,
-                "result": result
-            }
-            display_tool_result(display_data, console)
-
-        elif event_type == "tool_error":
-            # Tool execution failed
-            tool_name = event.get("tool_name", "Tool")
-            error = event.get("error", "Unknown error")
-
-            tool_data = {
-                "success": False,
-                "name": tool_name,
-                "error": error
-            }
-            display_tool_result(tool_data, console)
-
-        elif event_type == "max_iterations_reached":
-            # Maximum iterations reached
-            content = event.get("content", "Maximum iterations reached")
-            depth = event.get("depth", "unknown")
-            # Reset the start flag for next conversation
-            if hasattr(console, '_claude_started'):
-                delattr(console, '_claude_started')
-            console.print(f"\n⚠️ {content} (depth: {depth})", "yellow", True)
-            console.print("")
-            return "max_iterations_reached"
-
-        elif event_type == "final":
-            # Final response from Claude Code Agent
-            # Reset the start flag for next conversation
-            if hasattr(console, '_claude_started'):
-                delattr(console, '_claude_started')
-            console.print("\n✅ Task completed!", "green", True)
-            console.print("")
-            return "task_complete"
-
-        elif event_type == "error":
-            # General error
-            error_msg = event.get("content", "Unknown error")
-            # Reset the start flag for next conversation
-            if hasattr(console, '_claude_started'):
-                delattr(console, '_claude_started')
-            console.print(f"❌ Error: {error_msg}", "red")
-            console.print("")
-            return "error"
 
     elif agent.type == "GeminiResearchDemo":
         if event_type == "user_message":

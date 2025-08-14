@@ -80,13 +80,32 @@ class BashTool(BaseTool):
 
         # Default to low risk
         return ToolRiskLevel.LOW
+
+    async def _generate_confirmation_message(self, **kwargs) -> str:
+        """Generate detailed confirmation message for bash commands."""
+        command = kwargs.get("command", "")
+        risk_level = self.get_risk_level(**kwargs)
+
+        message = f"🔧 Execute bash command:\n"
+        message += f"Command: {command}\n"
+        message += f"Risk Level: {risk_level.value.upper()}\n"
+
+        if risk_level == ToolRiskLevel.HIGH:
+            message += "⚠️  WARNING: This is a HIGH RISK command that could cause system damage!\n"
+        elif risk_level == ToolRiskLevel.MEDIUM:
+            message += "⚠️  CAUTION: This command may modify files or system state.\n"
+
+        return message
     
     async def execute(self, **kwargs) -> ToolResult:
         """Execute bash command with streaming output."""
         command = kwargs.get("command")
-        
+
         if not command:
             return ToolResult(call_id="", error="No command provided")
+
+        # 在输出开头显示执行的命令
+        command_header = f"$ {command}\n"
         
         # 检测是否是长时间运行的命令
         long_running_patterns = [
@@ -119,7 +138,7 @@ class BashTool(BaseTool):
             
             if is_long_running:
                 # 流式读取输出
-                output_chunks = []
+                output_chunks = [command_header]  # 开头显示命令
                 start_time = asyncio.get_event_loop().time()
                 
                 while True:
@@ -187,7 +206,7 @@ class BashTool(BaseTool):
                 if output_chunks:
                     return ToolResult(call_id="", result="\n".join(output_chunks))
                 else:
-                    return ToolResult(call_id="", result="Process completed with no output")
+                    return ToolResult(call_id="", result=f"{command_header}Process completed with no output")
             
             else:
                 # 普通命令，正常等待完成
@@ -205,9 +224,13 @@ class BashTool(BaseTool):
                     stdout_text = stdout.decode(self._encoding, errors='replace') if stdout else ""
                 
                 if process.returncode == 0:
-                    return ToolResult(call_id="", result=stdout_text or "Command executed successfully")
+                    result_text = command_header + (stdout_text or "Command executed successfully")
+                    return ToolResult(call_id="", result=result_text)
                 else:
-                    return ToolResult(call_id="", error=f"Command failed with exit code {process.returncode}")
+                    error_text = command_header + f"Command failed with exit code {process.returncode}"
+                    if stdout_text:
+                        error_text += f"\nOutput:\n{stdout_text}"
+                    return ToolResult(call_id="", error=error_text)
         
         except Exception as e:
             return ToolResult(call_id="", error=f"Error executing command: {str(e)}")

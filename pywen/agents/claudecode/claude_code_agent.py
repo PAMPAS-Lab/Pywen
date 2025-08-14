@@ -15,7 +15,6 @@ from pywen.core.trajectory_recorder import TrajectoryRecorder
 from .prompts import ClaudeCodePrompts
 from .context_manager import ClaudeCodeContextManager
 
-logger = logging.getLogger(__name__)
 
 
 class ClaudeCodeAgent(BaseAgent):
@@ -40,9 +39,6 @@ class ClaudeCodeAgent(BaseAgent):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         trajectory_path = os.path.join(trajectories_dir, f"claude_code_trajectory_{timestamp}.json")
         self.trajectory_recorder = TrajectoryRecorder(trajectory_path)
-
-        # Initialize model and tools from base agent
-        self.model = self.llm_client
 
         # Setup Claude Code specific tools after base tools
         self._setup_claude_code_tools()
@@ -90,7 +86,6 @@ class ClaudeCodeAgent(BaseAgent):
             self.context.update(additional_context)
 
         except Exception as e:
-            logger.warning(f"Failed to build full context: {e}")
             if self.cli_console:
                 self.cli_console.print(f"Failed to build context: {e}", "yellow")
             # Fallback to minimal context
@@ -109,11 +104,21 @@ class ClaudeCodeAgent(BaseAgent):
             # Start trajectory recording
             self.trajectory_recorder.start_recording(
                 task=query,
-                provider=getattr(self.model, 'provider', "unknown"),
-                model=getattr(self.model, 'model', "unknown"),
+                provider=self.config.model_config.provider.value,
+                model=self.config.model_config.model,
                 max_steps=self.max_iterations
             )
 
+            # Yield trajectory saved event
+            yield {
+                "type": "trajectory_saved",
+                "data": {
+                    "path": self.trajectory_recorder.trajectory_path,
+                    "is_task_start": True
+                }
+            }
+
+            yield {"type": "user_message", "data": {"message": query}}
             # Update context before each run
             self._update_context()
 
@@ -130,15 +135,15 @@ class ClaudeCodeAgent(BaseAgent):
             async for event in self._query_recursive(messages, system_prompt, depth=0, **kwargs):
                 yield event
 
-            # End trajectory recording
-            self.trajectory_recorder.end_recording(success=True, final_result="Task completed")
+            # # End trajectory recording
+            # self.trajectory_recorder.end_recording(success=True, final_result="Task completed")
 
         except Exception as e:
-            logger.error(f"Error in Claude Code Agent run: {e}")
             yield {
                 "type": "error",
-                "content": f"Agent error: {str(e)}",
-                "agent_type": self.type
+                "data":{
+                "error": f"Agent error: {str(e)}"
+                },
             }
 
     async def _query_recursive(
@@ -159,43 +164,33 @@ class ClaudeCodeAgent(BaseAgent):
             **kwargs: Additional arguments
         """
         try:
-            # � TRAJECTORY: Record recursion start
+            # TRAJECTORY: Record recursion start
 
 
             # 🔢 DEPTH CONTROL: Check max iterations
             if depth >= self.max_iterations:
-
                 yield {
-                    "type": "max_iterations_reached",
-                    "content": f"Maximum iterations ({self.max_iterations}) reached",
-                    "depth": depth,
-                    "agent_type": self.type
+                    "type": "max_turns_reached",
+                    "data": {
+                        "max_iterations": self.max_iterations,
+                        "current_depth": depth
+                    }
                 }
                 return
 
             # Check for abort signal
             if kwargs.get('abort_signal') and kwargs['abort_signal'].is_set():
-
                 yield {
-                    "type": "final",
-                    "content": "Operation was cancelled",
-                    "agent_type": self.type
+                    "type": "error",
+                    "data": {"error": "Operation was cancelled"}
                 }
                 return
 
 
-
-            # 📝 TRAJECTORY: Record agent step start
-            self.trajectory_recorder.record_agent_step(
-                step_number=depth,
-                state=f"llm_request_depth_{depth}",
-                llm_messages=messages
-            )
-
             # Get assistant response with fine-grained streaming events
             assistant_message, tool_calls = None, []
             async for response_event in self._get_assistant_response_streaming(messages, depth=depth, **kwargs):
-                if response_event["type"] in ["llm_stream_start", "llm_chunk"]:
+                if response_event["type"] in ["llm_stream_start", "llm_chunk", "content"]:
                     # Forward streaming events to caller
                     yield response_event
                 elif response_event["type"] == "assistant_response":
@@ -213,52 +208,39 @@ class ClaudeCodeAgent(BaseAgent):
                         name=tc.get("name", ""),
                         arguments=tc.get("arguments", {})
                     ) for tc in tool_calls] if tool_calls else None,
-                    model=getattr(self.model, 'model', "unknown"),
+                    model=self.config.model_config.model,
                     finish_reason="stop"
                 )
 
                 self.trajectory_recorder.record_llm_interaction(
                     messages=messages,
                     response=llm_response,
-                    provider=getattr(self.model, 'provider', "unknown"),
-                    model=getattr(self.model, 'model', "unknown"),
-                    current_task=f"depth_{depth}_query"
+                    provider=self.config.model_config.provider.value,
+                    model=self.config.model_config.model,
+                    tools=self.tools,
+                    current_task=f"Processing query at depth {depth}"
                 )
 
 
             # TOP CONDITION: No tool calls means we're done
             if not tool_calls:
-
+                # Yield task completion event
                 yield {
-                    "type": "final",
+                    "type": "task_complete",
                     "content": assistant_message.content if assistant_message else "",
-                    "agent_type": self.type
+                    
                 }
                 return
 
             # Yield tool call events for each tool
             for tool_call in tool_calls:
-                # 📝 TRAJECTORY: Record tool call as agent step
-                tool_call_obj = ToolCall(
-                    call_id=tool_call.get("id", "unknown"),
-                    name=tool_call["name"],
-                    arguments=tool_call.get("arguments", {})
-                )
-
-                self.trajectory_recorder.record_agent_step(
-                    step_number=depth,
-                    state=f"tool_call_{tool_call['name']}",
-                    tool_calls=[tool_call_obj]
-                )
-
                 yield {
                     "type": "tool_call_start",
                     "data": {
                         "call_id": tool_call.get("id", "unknown"),
                         "name": tool_call["name"],
                         "arguments": tool_call.get("arguments", {})
-                    },
-                    "agent_type": self.type
+                    }
                 }
 
             # Execute tools and get results with streaming events
@@ -267,22 +249,8 @@ class ClaudeCodeAgent(BaseAgent):
                 if tool_event["type"] in ["tool_start", "tool_result", "tool_error"]:
                     # 📝 TRAJECTORY: Record tool results
                     if tool_event["type"] == "tool_result":
-                        tool_data = tool_event.get("data", {})
-
-                        # Create ToolResult object for trajectory recording
-                        from pywen.utils.tool_basics import ToolResult
-                        tool_result_obj = ToolResult(
-                            call_id=tool_data.get("call_id", "unknown"),
-                            result=tool_data.get("result", "") if tool_data.get("success", True) else None,
-                            error=None if tool_data.get("success", True) else tool_data.get("result", "Tool execution failed"),
-                            metadata={"tool_name": tool_data.get("name", "unknown")}
-                        )
-
-                        self.trajectory_recorder.record_agent_step(
-                            step_number=depth,
-                            state=f"tool_result_{tool_data.get('name', 'unknown')}",
-                            tool_results=[tool_result_obj]
-                        )
+                        # Just pass through the tool result event
+                        pass
 
                     # Forward tool events to caller
                     yield tool_event
@@ -293,9 +261,8 @@ class ClaudeCodeAgent(BaseAgent):
             # Check for abort signal after tool execution
             if kwargs.get('abort_signal') and kwargs['abort_signal'].is_set():
                 yield {
-                    "type": "final",
-                    "content": "Operation was cancelled during tool execution",
-                    "agent_type": self.type
+                    "type": "error",
+                    "data": {"error": "Operation was cancelled during tool execution"}
                 }
                 return
 
@@ -311,11 +278,10 @@ class ClaudeCodeAgent(BaseAgent):
                 yield event
 
         except Exception as e:
-            logger.error(f"Error in recursive query: {e}")
             yield {
                 "type": "error",
-                "content": f"Query error: {str(e)}",
-                "agent_type": self.type
+                "data":{"error": f"Query error: {str(e)}"},
+                
             }
 
     async def _get_assistant_response_streaming(
@@ -329,135 +295,75 @@ class ClaudeCodeAgent(BaseAgent):
         Yields: llm_stream_start, llm_chunk, assistant_response events
         """
         try:
-            # Try streaming first
-            if kwargs.get('stream', True):
-                try:
-                    response_generator = await self.model.generate_response(
-                        messages=messages,
-                        tools=self.tools,
-                        stream=True
-                    )
-
-                    # Yield stream start event
-                    yield {
-                        "type": "llm_stream_start",
-                        "data": {"depth": depth},
-                        "agent_type": self.type
-                    }
-
-                    assistant_content = ""
-                    tool_calls = []
-                    previous_content = ""
-
-                    # Stream the response with incremental output
-                    async for chunk in response_generator:
-                        if hasattr(chunk, 'content') and chunk.content:
-                            current_content = chunk.content
-                            if current_content != previous_content:
-                                new_content = current_content[len(previous_content):]
-                                if new_content:
-                                    # Yield streaming content chunk
-                                    yield {
-                                        "type": "llm_chunk",
-                                        "data": {"content": new_content},
-                                        "agent_type": self.type
-                                    }
-                                previous_content = current_content
-                            assistant_content = current_content
-
-                        if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                            for tool_call in chunk.tool_calls:
-                                tool_calls.append({
-                                    "id": tool_call.call_id,
-                                    "name": tool_call.name,
-                                    "arguments": tool_call.arguments
-                                })
-
-                    # Create assistant message
-                    assistant_msg = LLMMessage(role="assistant", content=assistant_content)
-                    if tool_calls:
-                        from pywen.utils.tool_basics import ToolCall
-                        llm_tool_calls = []
-                        for tc in tool_calls:
-                            llm_tool_calls.append(ToolCall(
-                                call_id=tc["id"],
-                                name=tc["name"],
-                                arguments=tc["arguments"]
-                            ))
-                        assistant_msg.tool_calls = llm_tool_calls
-
-                    # Yield final assistant response
-                    yield {
-                        "type": "assistant_response",
-                        "assistant_message": assistant_msg,
-                        "tool_calls": tool_calls,
-                        "agent_type": self.type
-                    }
-                    return
-
-                except Exception as e:
-                    logger.warning(f"Streaming failed, falling back to non-streaming: {e}")
-
-            # Non-streaming fallback
-            response = await self.model.generate_response(
+            response_stream = await self.llm_client.generate_response(
                 messages=messages,
                 tools=self.tools,
-                stream=False
+                stream=True
             )
 
-            assistant_content = response.content
-            tool_calls = []
+            # Yield stream start event
+            yield {
+                "type": "llm_stream_start",
+                "data": {"depth": depth}
+            }
 
-            # Yield content for non-streaming mode
-            if assistant_content:
+            # 1. 流式处理响应，收集工具调用
+            final_response = None
+            previous_content = ""
+            collected_tool_calls = []
+
+            async for response_chunk in response_stream:
+                final_response = response_chunk
+
+                # 发送内容增量
+                if response_chunk.content:
+                    current_content = response_chunk.content
+                    if current_content != previous_content:
+                        new_content = current_content[len(previous_content):]
+                        if new_content:
+                            yield {
+                                "type": "llm_chunk",
+                                "data": {"content": new_content}
+                            }
+                        previous_content = current_content
+
+                # 收集工具调用（不立即执行）
+                if response_chunk.tool_calls:
+                    collected_tool_calls.extend(response_chunk.tool_calls)
+
+            # 2. 流结束后处理
+            if final_response:
+                # 添加到对话历史
+                assistant_msg = LLMMessage(
+                    role="assistant",
+                    content=final_response.content,
+                    tool_calls=final_response.tool_calls
+                )
+
+                # 简化的工具调用格式转换
+                tool_calls = []
+                if final_response.tool_calls:
+                    for tc in final_response.tool_calls:
+                        tool_calls.append({
+                            "id": tc.call_id,
+                            "name": tc.name,
+                            "arguments": tc.arguments
+                        })
+
+                # 返回最终的assistant_response事件
                 yield {
-                    "type": "content",
-                    "content": assistant_content,
-                    "agent_type": self.type
+                    "type": "assistant_response",
+                    "assistant_message": assistant_msg,
+                    "tool_calls": tool_calls
                 }
 
-            # Handle tool calls
-            if response.tool_calls:
-                for tool_call in response.tool_calls:
-                    tool_calls.append({
-                        "id": tool_call.call_id,
-                        "name": tool_call.name,
-                        "arguments": tool_call.arguments
-                    })
-
-            # Create assistant message
-            assistant_msg = LLMMessage(role="assistant", content=assistant_content)
-            if tool_calls:
-                from pywen.utils.tool_basics import ToolCall
-                llm_tool_calls = []
-                for tc in tool_calls:
-                    llm_tool_calls.append(ToolCall(
-                        call_id=tc["id"],
-                        name=tc["name"],
-                        arguments=tc["arguments"]
-                    ))
-                assistant_msg.tool_calls = llm_tool_calls
-
-            # Yield final assistant response
-            yield {
-                "type": "assistant_response",
-                "assistant_message": assistant_msg,
-                "tool_calls": tool_calls,
-                "agent_type": self.type
-            }
-            return
-
         except Exception as e:
-            logger.error(f"Error getting assistant response: {e}")
-            error_msg = LLMMessage(role="assistant", content=f"Error: {str(e)}")
             yield {
-                "type": "assistant_response",
-                "assistant_message": error_msg,
-                "tool_calls": [],
-                "agent_type": self.type
+                "type": "error",
+                "data": {"error": f"Streaming failed, falling back to non-streaming: {str(e)}"}
             }
-            return
 
+    
     async def _get_assistant_response(
         self,
         messages: List[LLMMessage],
@@ -471,7 +377,7 @@ class ClaudeCodeAgent(BaseAgent):
             # Try streaming first
             if kwargs.get('stream', True):
                 try:
-                    response_generator = await self.model.generate_response(
+                    response_generator = await self.llm_client.generate_response(
                         messages=messages,
                         tools=self.tools,
                         stream=True
@@ -517,10 +423,12 @@ class ClaudeCodeAgent(BaseAgent):
                     return assistant_msg, tool_calls
 
                 except Exception as e:
-                    logger.warning(f"Streaming failed, falling back to non-streaming: {e}")
+                    # Log error but continue to non-streaming fallback
+                    if self.cli_console:
+                        self.cli_console.print(f"Streaming failed, falling back to non-streaming: {str(e)}", "yellow")
 
             # Non-streaming fallback
-            response = await self.model.generate_response(
+            response = await self.llm_client.generate_response(
                 messages=messages,
                 tools=self.tools,
                 stream=False
@@ -554,8 +462,9 @@ class ClaudeCodeAgent(BaseAgent):
             return assistant_msg, tool_calls
 
         except Exception as e:
-            logger.error(f"Error getting assistant response: {e}")
             error_msg = LLMMessage(role="assistant", content=f"Error: {str(e)}")
+            if self.cli_console:
+                self.cli_console.print(f"Error in assistant response: {str(e)}", "red")
             return error_msg, []
 
 
@@ -567,22 +476,21 @@ class ClaudeCodeAgent(BaseAgent):
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Execute tools with intelligent concurrency strategy (streaming version)
-        - Read-only tools: Execute concurrently
-        - Write tools: Execute serially
+        Based on original Claude Code implementation
         """
         if not tool_calls:
             yield {
                 "type": "tool_results",
                 "results": [],
-                "agent_type": self.type
+                
             }
             return
 
-        # Check if all tools are read-only
-        all_readonly = all(self._is_tool_readonly(tc["name"]) for tc in tool_calls)
+        # Simple concurrency check like original Claude Code
+        can_run_concurrently = all(self._is_tool_readonly(tc["name"]) for tc in tool_calls)
 
-        if all_readonly and len(tool_calls) > 1:
-            # Execute read-only tools concurrently
+        if can_run_concurrently and len(tool_calls) > 1:
+            # Execute read-only tools concurrently (like original)
             async for event in self._execute_tools_concurrently_streaming(tool_calls, depth=depth, **kwargs):
                 yield event
         else:
@@ -676,25 +584,27 @@ class ClaudeCodeAgent(BaseAgent):
                         "arguments": tool_call.get("arguments", {}),
                         "depth": depth
                     },
-                    "agent_type": self.type
+                    
                 }
 
                 result = await self._execute_single_tool(tool_call, **kwargs)
                 tool_results.append(result)
 
-                # Yield tool result event
-                # Use result.result if it's structured data, otherwise use result.content
-                result_data = result.result if hasattr(result, 'result') and result.result is not None else result.content
+                # Extract result content for CLI display (avoiding ToolResult object display)
+                result_content = result.content if hasattr(result, 'content') else str(result)
+
+                # Check if it's an error result
+                is_success = not (result_content.startswith("Error:") if result_content else False)
 
                 yield {
                     "type": "tool_result",
                     "data": {
                         "call_id": tool_call.get("id", "unknown"),
                         "name": tool_call["name"],
-                        "result": result_data,
-                        "success": True
+                        "result": result_content,
+                        "success": is_success
                     },
-                    "agent_type": self.type
+                    
                 }
 
                 # Check for abort signal between tool executions
@@ -712,21 +622,21 @@ class ClaudeCodeAgent(BaseAgent):
 
                 # Yield tool error event
                 yield {
-                    "type": "tool_error",
+                    "type": "error",
                     "data": {
                         "call_id": tool_call.get("id", "unknown"),
                         "name": tool_call["name"],
                         "error": error_msg,
                         "success": False
                     },
-                    "agent_type": self.type
+                    
                 }
 
         # Yield final results
         yield {
             "type": "tool_results",
             "results": tool_results,
-            "agent_type": self.type
+            
         }
 
     async def _execute_tools_concurrently_streaming(
@@ -748,7 +658,7 @@ class ClaudeCodeAgent(BaseAgent):
                     "arguments": tool_call.get("arguments", {}),
                     "depth": depth
                 },
-                "agent_type": self.type
+                
             }
 
         # Create tasks for concurrent execution
@@ -766,16 +676,20 @@ class ClaudeCodeAgent(BaseAgent):
                 result = await task
                 tool_results.append(result)
 
+                # Extract result content for CLI display
+                result_content = result.content if hasattr(result, 'content') else str(result)
+                is_success = not (result_content.startswith("Error:") if result_content else False)
+
                 # Yield tool result event
                 yield {
                     "type": "tool_result",
                     "data": {
                         "call_id": tool_call.get("id", "unknown"),
                         "name": tool_call["name"],
-                        "result": result.content,
-                        "success": True
+                        "result": result_content,
+                        "success": is_success
                     },
-                    "agent_type": self.type
+                    
                 }
 
             except Exception as e:
@@ -789,21 +703,21 @@ class ClaudeCodeAgent(BaseAgent):
 
                 # Yield tool error event
                 yield {
-                    "type": "tool_error",
+                    "type": "error",
                     "data": {
                         "call_id": tool_call.get("id", "unknown"),
                         "name": tool_call["name"],
                         "error": error_msg,
                         "success": False
                     },
-                    "agent_type": self.type
+                    
                 }
 
         # Yield final results
         yield {
             "type": "tool_results",
             "results": tool_results,
-            "agent_type": self.type
+            
         }
 
     async def _execute_tools_serially(
@@ -838,52 +752,60 @@ class ClaudeCodeAgent(BaseAgent):
         tool_call: Dict[str, Any],
         **kwargs
     ) -> LLMMessage:
-        """Execute a single tool and return the result as LLMMessage"""
+        """
+        Execute a single tool and return the result as LLMMessage
+        Based on original Claude Code implementation pattern
+        """
         try:
-            # Find the tool
-            tool = self._find_tool(tool_call["name"])
-            if not tool:
-                error_msg = f"Tool '{tool_call['name']}' not found"
-                return LLMMessage(
-                    role="tool",
-                    content=f"Error: {error_msg}",
-                    tool_call_id=tool_call.get("id", "unknown")
-                )
+            # Convert dict to ToolCall object (like original Claude Code)
+            from pywen.utils.tool_basics import ToolCall
+            tool_call_obj = ToolCall(
+                call_id=tool_call.get("id", "unknown"),
+                name=tool_call["name"],
+                arguments=tool_call.get("arguments", {})
+            )
 
-            # Check if tool needs confirmation
+            # 检查是否需要用户确认（基于工具风险等级）- 参照Qwen Agent实现
             if hasattr(self, 'cli_console') and self.cli_console:
-                confirmation_details = await tool.get_confirmation_details(**tool_call.get("arguments", {}))
-                if confirmation_details:  # Only ask for confirmation if needed
-                    # Create a ToolCall-like object for confirmation
-                    from pywen.utils.tool_basics import ToolCall
-                    tool_call_obj = ToolCall(
-                        call_id=tool_call.get("id", "unknown"),
-                        name=tool_call["name"],
-                        arguments=tool_call.get("arguments", {})
-                    )
-                    confirmed = await self.cli_console.confirm_tool_call(tool_call_obj, tool)
-                    if not confirmed:
-                        # User rejected the tool execution
-                        return LLMMessage(
-                            role="tool",
-                            content="Tool execution was cancelled by user",
-                            tool_call_id=tool_call.get("id", "unknown")
-                        )
+                # 获取工具实例来检查风险等级
+                tool = self.tool_registry.get_tool(tool_call["name"])
+                if tool:
+                    confirmation_details = await tool.get_confirmation_details(**tool_call.get("arguments", {}))
+                    if confirmation_details:  # 只有需要确认的工具才询问用户
+                        confirmed = await self.cli_console.confirm_tool_call(tool_call_obj, tool)
+                        if not confirmed:
+                            # 用户拒绝，返回取消消息
+                            return LLMMessage(
+                                role="tool",
+                                content="Tool execution was cancelled by user",
+                                tool_call_id=tool_call.get("id", "unknown")
+                            )
 
-            # Execute tool
-            result = await tool.execute(**tool_call.get("arguments", {}))
+            # Use tool executor (same pattern as QwenAgent and original Claude Code)
+            results = await self.tool_executor.execute_tools([tool_call_obj])
+            result = results[0]
 
-            # Return successful result
+            # Convert ToolResult to LLMMessage with proper content extraction
+            if result.success:
+                # Extract meaningful content from result
+                if isinstance(result.result, dict):
+                    # For structured results, use summary or convert to string
+                    content = result.result.get('summary', str(result.result))
+                else:
+                    # For simple results, use as-is
+                    content = str(result.result) if result.result is not None else "Operation completed successfully"
+            else:
+                # Handle error case
+                content = f"Error: {result.error}" if result.error else "Tool execution failed"
+
             return LLMMessage(
                 role="tool",
-                content=str(result),
+                content=content,
                 tool_call_id=tool_call.get("id", "unknown")
             )
 
         except Exception as e:
             error_msg = f"Error executing tool '{tool_call['name']}': {str(e)}"
-            if self.cli_console:
-                self.cli_console.print(error_msg, "red")
 
             return LLMMessage(
                 role="tool",
