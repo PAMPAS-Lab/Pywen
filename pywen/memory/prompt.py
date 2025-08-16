@@ -33,3 +33,8 @@ Example: Result: 0.92 0.88
 
 <original>\n{}\n</original>
 """
+
+
+first_downgrade_prompt = """"""
+
+second_downgrade_prompt = """"""
