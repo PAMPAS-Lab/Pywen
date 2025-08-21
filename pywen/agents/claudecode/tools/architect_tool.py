@@ -4,7 +4,7 @@ Based on claude_code_version/tools/ArchitectTool/ArchitectTool.tsx
 """
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import List
 
 from pywen.tools.base import BaseTool
 from pywen.utils.tool_basics import ToolResult
@@ -91,6 +91,10 @@ class ArchitectTool(BaseTool):
                 result_parts.append("|_ Starting analysis...\n\n")
 
                 # Run the architect with the given prompt
+                final_content = ""
+                analysis_completed = False
+                error_occurred = False
+
                 async for event in architect_agent._query_recursive(
                     messages=[
                         LLMMessage(role="system", content=self._get_architect_system_prompt()),
@@ -99,25 +103,89 @@ class ArchitectTool(BaseTool):
                     system_prompt=self._get_architect_system_prompt(),
                     max_iterations=3  # Limit iterations for architect
                 ):
-                    if event["type"] == "content":
-                        result_parts.append(event["content"])
-                    elif event["type"] == "tool_call_start":
-                        tool_name = event.get("data", {}).get("name", "unknown")
-                        result_parts.append(f"|_ Using {tool_name} tool...\n")
-                    elif event["type"] == "tool_call":
-                        tool_use_count += 1
-                    elif event["type"] in ["final", "error"]:
+                    event_type = event.get("type", "")
+
+                    if event_type == "content":
+                        content_text = event.get("content", "")
+                        if content_text.strip():  # Only add non-empty content
+                            result_parts.append(content_text)
+                            final_content += content_text  # Accumulate final content
+                    elif event_type == "tool_call_start":
+                        tool_data = event.get("data", {})
+                        tool_name = tool_data.get("name", "unknown")
+                        tool_args = tool_data.get("arguments", {})
+                        
+                        # 显示工具调用的详细信息
+                        if tool_name == "read_file" and "file_path" in tool_args:
+                            result_parts.append(f"|_ 📖 Reading file: {tool_args['file_path']}\n")
+                        elif tool_name == "bash" and "command" in tool_args:
+                            cmd = tool_args["command"][:50] + "..." if len(tool_args["command"]) > 50 else tool_args["command"]
+                            result_parts.append(f"|_ 🔧 Running: {cmd}\n")
+                        elif tool_name == "grep" and "pattern" in tool_args:
+                            result_parts.append(f"|_ 🔍 Searching: {tool_args['pattern']}\n")
+                        elif tool_name == "glob" and "pattern" in tool_args:
+                            result_parts.append(f"|_ 📁 Finding files: {tool_args['pattern']}\n")
+                        elif tool_name == "web_search" and "query" in tool_args:
+                            result_parts.append(f"|_ 🌐 Web search: {tool_args['query']}\n")
+                        elif tool_name == "web_fetch" and "url" in tool_args:
+                            result_parts.append(f"|_ 🌐 Fetching: {tool_args['url']}\n")
+                        else:
+                            result_parts.append(f"|_ 🔧 Using {tool_name} tool\n")
+                        
+                        tool_use_count += 1  # Count tools when they start
+                    elif event_type == "tool_call_end":
+                        tool_data = event.get("data", {})
+                        tool_name = tool_data.get("name", "unknown")
+                        success = tool_data.get("success", True)
+                        
+                        if success:
+                            result_parts.append(f"|_ ✅ Completed {tool_name}\n")
+                        else:
+                            result_parts.append(f"|_ ❌ Failed {tool_name}\n")
+                    elif event_type in ["final", "task_complete"]:
+                        # Capture final content from these events
                         if event.get("content"):
-                            result_parts.append(event["content"])
+                            final_event_content = event["content"]
+                            result_parts.append(final_event_content)
+                            final_content += final_event_content
+                        analysis_completed = True
                         break
-                
-                # Add completion indicator
-                result_parts.append(f"\n|_ Analysis complete ({tool_use_count} tools used)\n")
+                    elif event_type == "error":
+                        # Handle error events
+                        error_content = event.get("content", "Analysis encountered an error")
+                        result_parts.append(f"|_ Error: {error_content}\n")
+                        error_occurred = True
+                        break
+
+                # Add appropriate completion message
+                if error_occurred:
+                    result_parts.append(f"\n|_ Analysis failed with error ({tool_use_count} tools used)\n")
+                elif not analysis_completed:
+                    result_parts.append(f"\n|_ Analysis completed - max iterations reached ({tool_use_count} tools used)\n")
+                else:
+                    result_parts.append(f"\n|_ Analysis completed successfully ({tool_use_count} tools used)\n")
+
+                # If we didn't get meaningful content, add a summary based on tool usage
+                if not final_content.strip() and tool_use_count > 0:
+                    summary_content = f"|_ Note: Analysis executed {tool_use_count} tool operations but returned no text output\n"
+                    result_parts.append(summary_content)
 
                 # Combine results
                 final_result = "".join(result_parts).strip()
-                if not final_result:
-                    final_result = "🏗️ **Architect Analysis**\n\n|_ Analysis completed but returned no output."
+
+                # Ensure we have meaningful output
+                if not final_result or len(final_result) < 50:  # Very short output
+                    base_info = f"🏗️ **Architect Analysis**\n\n|_ Analysis request: {prompt[:100]}{'...' if len(prompt) > 100 else ''}\n"
+                    if tool_use_count > 0:
+                        base_info += f"|_ Executed {tool_use_count} tool operations\n"
+                        base_info += "|_ Analysis completed successfully\n"
+                    else:
+                        base_info += "|_ Analysis completed but no tools were used\n"
+
+                    if final_content.strip():
+                        base_info += f"\n**Analysis Result:**\n{final_content.strip()}\n"
+
+                    final_result = base_info
 
                 # Add execution summary
                 duration = time.time() - start_time

@@ -137,13 +137,43 @@ Usage notes:
                             result_parts.append(content)
                             final_content += content  # Accumulate final content
                     elif event_type == "tool_call_start":
-                        tool_name = event.get("data", {}).get("name", "unknown")
-                        result_parts.append(f"|_ Using {tool_name} tool...\n")
+                        tool_data = event.get("data", {})
+                        tool_name = tool_data.get("name", "unknown")
+                        tool_args = tool_data.get("arguments", {})
+                        
+                        # 显示工具调用的详细信息
+                        if tool_name == "read_file" and "file_path" in tool_args:
+                            result_parts.append(f"|_ 📖 Reading file: {tool_args['file_path']}\n")
+                        elif tool_name == "write_file" and "file_path" in tool_args:
+                            result_parts.append(f"|_ ✏️ Writing file: {tool_args['file_path']}\n")
+                        elif tool_name == "edit_file" and "file_path" in tool_args:
+                            result_parts.append(f"|_ ✏️ Editing file: {tool_args['file_path']}\n")
+                        elif tool_name == "bash" and "command" in tool_args:
+                            cmd = tool_args["command"][:50] + "..." if len(tool_args["command"]) > 50 else tool_args["command"]
+                            result_parts.append(f"|_ 🔧 Running: {cmd}\n")
+                        elif tool_name == "grep" and "pattern" in tool_args:
+                            result_parts.append(f"|_ 🔍 Searching: {tool_args['pattern']}\n")
+                        elif tool_name == "glob" and "pattern" in tool_args:
+                            result_parts.append(f"|_ 📁 Finding files: {tool_args['pattern']}\n")
+                        elif tool_name == "web_search" and "query" in tool_args:
+                            result_parts.append(f"|_ 🌐 Web search: {tool_args['query']}\n")
+                        elif tool_name == "web_fetch" and "url" in tool_args:
+                            result_parts.append(f"|_ 🌐 Fetching: {tool_args['url']}\n")
+                        elif tool_name == "todo_write":
+                            result_parts.append(f"|_ ✅ Updating todo list\n")
+                        else:
+                            result_parts.append(f"|_ 🔧 Using {tool_name} tool\n")
+                        
                         tool_use_count += 1  # Count tools when they start
                     elif event_type == "tool_call_end":
-                        # Optionally log tool completion
-                        tool_name = event.get("data", {}).get("name", "unknown")
-                        result_parts.append(f"|_ Completed {tool_name}\n")
+                        tool_data = event.get("data", {})
+                        tool_name = tool_data.get("name", "unknown")
+                        success = tool_data.get("success", True)
+                        
+                        if success:
+                            result_parts.append(f"|_ ✅ Completed {tool_name}\n")
+                        else:
+                            result_parts.append(f"|_ ❌ Failed {tool_name}\n")
                     elif event_type in ["final", "task_complete"]:
                         # Capture final content from these events
                         if event.get("content"):

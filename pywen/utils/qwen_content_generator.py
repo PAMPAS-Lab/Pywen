@@ -280,7 +280,6 @@ class QwenContentGenerator(ContentGenerator):
                 if delta.tool_calls:
                     # 如果这是第一次遇到工具调用，先输出已有的文本内容
                     if not content_yielded_before_tools and accumulated_content:
-                        print("🔧 Generating tool calls...")
                         yield LLMResponse(
                             content="".join(accumulated_content),
                             model=final_model,
@@ -294,7 +293,7 @@ class QwenContentGenerator(ContentGenerator):
                         index = tc_delta.index if hasattr(tc_delta, 'index') else 0
                         
                         if index not in tool_call_buffers:
-                            tool_call_buffers[index] = {"id": "", "name": "", "args_str": ""}
+                            tool_call_buffers[index] = {"id": "", "name": "", "args_str": "", "name_printed": False}
                         
                         buf = tool_call_buffers[index]
 
@@ -304,8 +303,10 @@ class QwenContentGenerator(ContentGenerator):
 
                         # 更新工具信息
                         if tc_delta.function:
-                            if tc_delta.function.name:
+                            if tc_delta.function.name and not buf["name_printed"]:
                                 buf["name"] = tc_delta.function.name
+                                print(f"🔧 Calling {tc_delta.function.name} tool...")
+                                buf["name_printed"] = True
                             if tc_delta.function.arguments:
                                 buf["args_str"] += tc_delta.function.arguments
 

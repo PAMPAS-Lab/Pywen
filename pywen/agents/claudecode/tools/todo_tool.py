@@ -42,8 +42,7 @@ def update_todos(todos: List[Dict[str, Any]], agent_id: str = "default") -> str:
         todo_item = TodoItem(
             id=todo_data["id"],
             content=todo_data["content"],
-            status=todo_data["status"],
-            priority=todo_data["priority"]
+            status=todo_data["status"]
         )
         todo_items.append(todo_item)
 
@@ -57,12 +56,11 @@ def update_todos(todos: List[Dict[str, Any]], agent_id: str = "default") -> str:
 class TodoItem:
     """Todo item data structure"""
     def __init__(self, id: str, content: str, status: str = "pending", 
-                 priority: str = "medium", created_at: Optional[int] = None,
+                 created_at: Optional[int] = None,
                  updated_at: Optional[int] = None):
         self.id = id
         self.content = content
         self.status = status  # pending, in_progress, completed
-        self.priority = priority  # high, medium, low
         self.created_at = created_at or self._current_timestamp()
         self.updated_at = updated_at or self._current_timestamp()
     
@@ -71,7 +69,6 @@ class TodoItem:
             "id": self.id,
             "content": self.content,
             "status": self.status,
-            "priority": self.priority,
             "created_at": self.created_at,
             "updated_at": self.updated_at
         }
@@ -82,7 +79,6 @@ class TodoItem:
             id=data["id"],
             content=data["content"],
             status=data.get("status", "pending"),
-            priority=data.get("priority", "medium"),
             created_at=data.get("created_at"),
             updated_at=data.get("updated_at")
         )
@@ -170,10 +166,9 @@ class TodoStorage:
 
                 processed_todos.append(todo)
 
-            # Smart sorting: status > priority > updated_at
+            # Smart sorting: status > updated_at (sequential execution order)
             processed_todos.sort(key=lambda t: (
                 {'in_progress': 3, 'pending': 2, 'completed': 1}[t.status],
-                {'high': 3, 'medium': 2, 'low': 1}[t.priority],
                 -t.updated_at
             ), reverse=True)
 
@@ -286,14 +281,9 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
                                     "type": "string",
                                     "enum": ["pending", "in_progress", "completed"],
                                     "description": "Current status of the task"
-                                },
-                                "priority": {
-                                    "type": "string",
-                                    "enum": ["high", "medium", "low"],
-                                    "description": "Priority level of the task"
                                 }
                             },
-                            "required": ["id", "content", "status", "priority"]
+                            "required": ["id", "content", "status"]
                         }
                     }
                 },
@@ -337,7 +327,6 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
                     id=todo_data["id"],
                     content=todo_data["content"],
                     status=todo_data["status"],
-                    priority=todo_data["priority"],
                     created_at=existing.created_at if existing else None,
                     updated_at=None  # Will be set to current time
                 )
@@ -393,8 +382,6 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
                 return {"valid": False, "error": f"Todo content is required for ID: {todo.get('id')}"}
             if todo.get("status") not in ["pending", "in_progress", "completed"]:
                 return {"valid": False, "error": f"Invalid status for todo {todo.get('id')}: {todo.get('status')}"}
-            if todo.get("priority") not in ["high", "medium", "low"]:
-                return {"valid": False, "error": f"Invalid priority for todo {todo.get('id')}: {todo.get('priority')}"}
         
         return {"valid": True}
     
@@ -426,18 +413,8 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
                 checkbox = "- [ ]"
                 content_style = todo.content
 
-            # Priority indicator as badge
-            priority_badge = {
-                "high": "`HIGH`",
-                "medium": "`MED`",
-                "low": "`LOW`"
-            }.get(todo.priority, "")
-
-            # Format: - [x] content `PRIORITY`
-            if priority_badge:
-                line = f"{checkbox} {content_style} {priority_badge}"
-            else:
-                line = f"{checkbox} {content_style}"
+            # Format: - [x] content
+            line = f"{checkbox} {content_style}"
 
             lines.append(line)
 

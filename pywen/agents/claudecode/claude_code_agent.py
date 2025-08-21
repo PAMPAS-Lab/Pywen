@@ -104,7 +104,7 @@ class ClaudeCodeAgent(BaseAgent):
         """Return list of enabled tool names for Claude Code Agent."""
         return [
             'read_file', 'write_file', 'edit_file', 'read_many_files',
-            'ls', 'grep', 'glob', 'bash', 'web_fetch', 'web_search','task_tool','architect_tool','think','todo_write'
+            'ls', 'grep', 'glob', 'bash', 'web_fetch', 'web_search','task_tool','architect_tool','todo_write'
         ]
 
     def _build_system_prompt(self) -> str:
