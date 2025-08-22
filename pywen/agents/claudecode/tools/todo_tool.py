@@ -4,10 +4,8 @@ Based on Kode's TodoWriteTool implementation
 """
 import json
 import logging
-import os
-import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 
 from pywen.tools.base import BaseTool
@@ -55,22 +53,16 @@ def update_todos(todos: List[Dict[str, Any]], agent_id: str = "default") -> str:
 
 class TodoItem:
     """Todo item data structure"""
-    def __init__(self, id: str, content: str, status: str = "pending", 
-                 created_at: Optional[int] = None,
-                 updated_at: Optional[int] = None):
+    def __init__(self, id: str, content: str, status: str = "pending"):
         self.id = id
         self.content = content
         self.status = status  # pending, in_progress, completed
-        self.created_at = created_at or self._current_timestamp()
-        self.updated_at = updated_at or self._current_timestamp()
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,
             "content": self.content,
-            "status": self.status,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at
+            "status": self.status
         }
     
     @classmethod
@@ -78,26 +70,17 @@ class TodoItem:
         return cls(
             id=data["id"],
             content=data["content"],
-            status=data.get("status", "pending"),
-            created_at=data.get("created_at"),
-            updated_at=data.get("updated_at")
+            status=data.get("status", "pending")
         )
-    
-    def _current_timestamp(self) -> int:
-        import time
-        return int(time.time() * 1000)
 
 
 class TodoStorage:
-    """Todo storage manager with caching and auto-update"""
+    """Simple todo storage manager"""
 
     def __init__(self, agent_id: str = "default"):
         self.agent_id = agent_id
         self._storage_dir = self._get_storage_dir()
         self._storage_file = self._storage_dir / f"todos_{agent_id}.json"
-        self._cache = None
-        self._cache_timestamp = 0
-        self._cache_ttl = 5000  # 5 seconds cache TTL
 
     def _get_storage_dir(self) -> Path:
         """Get the storage directory for todos"""
@@ -105,85 +88,28 @@ class TodoStorage:
         todos_dir = get_pywen_config_dir() / "todos"
         todos_dir.mkdir(exist_ok=True)
         return todos_dir
-
-    def _invalidate_cache(self):
-        """Invalidate the cache"""
-        self._cache = None
-        self._cache_timestamp = 0
     
     def get_todos(self) -> List['TodoItem']:
-        """Get all todos for this agent with caching"""
-        current_time = int(time.time() * 1000)
-
-        # Check cache first
-        if (self._cache is not None and
-            current_time - self._cache_timestamp < self._cache_ttl):
-            return self._cache.copy()
-
-        # Load from file
+        """Get all todos for this agent"""
         if not self._storage_file.exists():
-            self._cache = []
-            self._cache_timestamp = current_time
             return []
 
         try:
             with open(self._storage_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                todos = [TodoItem.from_dict(item) for item in data]
-
-                # Update cache
-                self._cache = todos.copy()
-                self._cache_timestamp = current_time
-
-                return todos
+                return [TodoItem.from_dict(item) for item in data]
         except Exception as e:
             logger.error(f"Error loading todos: {e}")
-            self._cache = []
-            self._cache_timestamp = current_time
             return []
     
     def set_todos(self, todos: List['TodoItem']) -> None:
-        """Set todos for this agent with smart sorting and caching"""
+        """Set todos for this agent"""
         try:
-            existing_todos = self.get_todos()
-            current_time = int(time.time() * 1000)
-
-            # Process todos with timestamps and status tracking
-            processed_todos = []
-            for todo in todos:
-                # Find existing todo to track status changes
-                existing = next((t for t in existing_todos if t.id == todo.id), None)
-
-                # Update timestamps
-                if existing:
-                    # Keep original creation time, update modified time
-                    todo.created_at = existing.created_at
-                    todo.updated_at = current_time
-                else:
-                    # New todo
-                    todo.created_at = current_time
-                    todo.updated_at = current_time
-
-                processed_todos.append(todo)
-
-            # Smart sorting: status > updated_at (sequential execution order)
-            processed_todos.sort(key=lambda t: (
-                {'in_progress': 3, 'pending': 2, 'completed': 1}[t.status],
-                -t.updated_at
-            ), reverse=True)
-
-            # Save to file
-            data = [todo.to_dict() for todo in processed_todos]
+            data = [todo.to_dict() for todo in todos]
             with open(self._storage_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
-
-            # Update cache
-            self._cache = processed_todos.copy()
-            self._cache_timestamp = current_time
-
         except Exception as e:
             logger.error(f"Error saving todos: {e}")
-            self._invalidate_cache()
             raise
 
 
@@ -314,21 +240,14 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
                     metadata={"error": "validation_failed"}
                 )
             
-            # Get previous todos for comparison
-            previous_todos = self.storage.get_todos()
             
             # Convert to TodoItem objects
             todo_items = []
             for todo_data in todos:
-                # Find existing todo to preserve timestamps
-                existing = next((t for t in previous_todos if t.id == todo_data["id"]), None)
-                
                 todo_item = TodoItem(
                     id=todo_data["id"],
                     content=todo_data["content"],
-                    status=todo_data["status"],
-                    created_at=existing.created_at if existing else None,
-                    updated_at=None  # Will be set to current time
+                    status=todo_data["status"]
                 )
                 todo_items.append(todo_item)
             
@@ -395,36 +314,24 @@ When in doubt, use this tool. Being proactive with task management demonstrates 
         return f"Updated {total} todo(s) ({pending} pending, {in_progress} in progress, {completed} completed)"
     
     def _format_todos_for_display(self, todos: List[TodoItem]) -> str:
-        """Format todos for display with proper Markdown checkbox formatting"""
+        """Format todos for display"""
         if not todos:
-            return "No todos currently"
+            return "● Update Todos\n  ⎿ (empty)"
 
-        lines = []
-
-        for todo in todos:
-            # Standard Markdown checkbox format
+        lines = ["● Update Todos"]
+        
+        for i, todo in enumerate(todos):
             if todo.status == "completed":
-                checkbox = "- [x]"
-                content_style = f"~~{todo.content}~~"
+                status = "☑"
             elif todo.status == "in_progress":
-                checkbox = "- [~]"  # Using ~ for in-progress
-                content_style = f"**{todo.content}** *(in progress)*"
-            else:  # pending
-                checkbox = "- [ ]"
-                content_style = todo.content
-
-            # Format: - [x] content
-            line = f"{checkbox} {content_style}"
-
+                status = "⏳"
+            else:
+                status = "☐"
+            
+            if i == 0:
+                line = f"  ⎿  {status} {todo.content}"
+            else:
+                line = f"     {status} {todo.content}"
             lines.append(line)
-
-        # Add summary at the end
-        total = len(todos)
-        pending = sum(1 for t in todos if t.status == "pending")
-        in_progress = sum(1 for t in todos if t.status == "in_progress")
-        completed = sum(1 for t in todos if t.status == "completed")
-
-        lines.append("")  # Empty line
-        lines.append(f"**Progress:** {completed}/{total} completed • {in_progress} in progress • {pending} pending")
 
         return "\n".join(lines)
