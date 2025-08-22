@@ -19,6 +19,10 @@ from pywen.memory.file_restorer import IntelligentFileRestorer
 
 from pywen.agents.claudecode.tools.tool_adapter import ToolAdapterFactory
 from pywen.config.loader import get_trajectories_dir
+from pywen.agents.claudecode.system_reminder import (
+    generate_system_reminders, emit_reminder_event, reset_reminder_session,
+    ReminderMessage, system_reminder_service, get_system_reminder_start
+)
 
 
 class ClaudeCodeAgent(BaseAgent):
@@ -64,6 +68,10 @@ class ClaudeCodeAgent(BaseAgent):
 
         # Track quota check status
         self.quota_checked = False
+        
+        # Initialize system reminder service
+        self.todo_items = []  # Track current todo items
+        reset_reminder_session()  # Reset on agent initialization
 
     def _setup_claude_code_tools(self):
         """Setup Claude Code specific tools and configure them."""
@@ -201,13 +209,21 @@ class ClaudeCodeAgent(BaseAgent):
 
             # Update context before each run
             self._update_context()
+            
+            # Emit session startup event for system reminders
+            emit_reminder_event('session:startup', {
+                'agentId': self.type,
+                'messages': len(self.conversation_history),
+                'timestamp': datetime.datetime.now().timestamp(),
+                'context': self.context
+            })
 
             # 3. Core Agent flow with official prompt structure
             # Add new user message to conversation history
             user_message = LLMMessage(role="user", content=query)
             self.conversation_history.append(user_message)
 
-            # Build official message sequence
+            # Build official message sequence (merges reminders into user message)
             messages = await self._build_official_messages(query)
 
             # Start recursive query loop with depth control
@@ -345,13 +361,12 @@ class ClaudeCodeAgent(BaseAgent):
 
     async def _build_official_messages(self, user_query: str) -> List[LLMMessage]:
         """
-        Build official Claude Code message sequence:
+        Build official Claude Code message sequence with system reminders integrated:
         1. system-identity
         2. system-workflow
-        3. system-reminder-start
-        4. conversation history
-        5. current user message
-        6. system-reminder-end
+        3. system-reminder-start (static, before user message)
+        4. conversation history (excluding current user message)
+        5. current user message (with dynamic reminders merged)
 
         Args:
             user_query: The current user query (used for reference)
@@ -375,25 +390,37 @@ class ClaudeCodeAgent(BaseAgent):
             content=workflow_with_env
         ))
 
-        # 3. System Reminder Start
+        # 3. System Reminder Start (static, from system_reminder.py)
         messages.append(LLMMessage(
-            role="system",
-            content=self.prompts.get_system_reminder_start()
+            role="user",
+            content=get_system_reminder_start()
         ))
 
         # 4. Add conversation history (excluding the current user message)
         for msg in self.conversation_history[:-1]:  # Exclude the last message we just added
             messages.append(msg)
 
-        # 5. Current user message (already in conversation_history)
+        # 5. Current user message (keep original content)
         if self.conversation_history:
             messages.append(self.conversation_history[-1])
 
-        # 6. System Reminder End
-        messages.append(LLMMessage(
-            role="system",
-            content=self.prompts.get_system_reminder_end()
-        ))
+        # 6. Generate and inject dynamic system reminders as separate user messages
+        has_context = bool(self.context and len(self.conversation_history) > 1)
+        dynamic_reminders = generate_system_reminders(
+            has_context=has_context,
+            agent_id=self.type,
+            todo_items=self.todo_items
+        )
+        
+        # Add each reminder as a separate user message
+        for reminder in dynamic_reminders:
+            reminder_message = LLMMessage(
+                role="user",
+                content=reminder.content
+            )
+            messages.append(reminder_message)
+            # Also add to conversation history to persist across recursive calls
+            self.conversation_history.append(reminder_message)
 
         return messages
 
@@ -531,26 +558,37 @@ class ClaudeCodeAgent(BaseAgent):
                 self.conversation_history.append(tool_result)
 
 
-            # 🔄 RECURSIVE CALL: Rebuild official message structure with updated conversation history
+            # 🔄 RECURSIVE CALL: Check for new system reminders and add as separate user messages
             if system_prompt:
                 # Legacy mode: use system_prompt
                 updated_messages = [
                     LLMMessage(role="system", content=system_prompt)
                 ] + self.conversation_history.copy()
             else:
-                # Official mode: rebuild official message structure
-                # Get the last user message from conversation history
-                last_user_msg = None
-                for msg in reversed(self.conversation_history):
-                    if msg.role == "user":
-                        last_user_msg = msg.content
-                        break
-
-                if last_user_msg:
-                    updated_messages = await self._build_official_messages(last_user_msg)
-                else:
-                    # Fallback: use current messages
-                    updated_messages = messages
+                # Official mode: check for new system reminders and add as separate messages
+                has_context = bool(self.context and len(self.conversation_history) > 1)
+                new_dynamic_reminders = generate_system_reminders(
+                    has_context=has_context,
+                    agent_id=self.type,
+                    todo_items=self.todo_items
+                )
+                
+                # Add new reminders as separate user messages to conversation history
+                for reminder in new_dynamic_reminders:
+                    reminder_message = LLMMessage(
+                        role="user",
+                        content=reminder.content
+                    )
+                    # Add to conversation history
+                    self.conversation_history.append(reminder_message)
+                
+                # Use conversation history directly (no full rebuild)
+                updated_messages = [
+                    # Add minimal system structure for API compatibility
+                    LLMMessage(role="system", content=self.prompts.get_system_identity()),
+                    LLMMessage(role="system", content=f"{self.prompts.get_system_workflow()}\n\n{self.prompts.get_env_info(self.project_path)}"),
+                    LLMMessage(role="system", content=get_system_reminder_start())
+                ] + self.conversation_history.copy()
 
             # 🔄 RECURSIVE CALL: Continue with updated message history and incremented depth
             async for event in self._query_recursive(updated_messages, system_prompt, depth=depth+1, **kwargs):
@@ -824,6 +862,9 @@ class ClaudeCodeAgent(BaseAgent):
             # Execute tool
             results = await self.tool_executor.execute_tools([tool_call_obj], self.type)
             tool_result = results[0]
+            
+            # Emit events for system reminders based on tool type
+            self._emit_tool_events(tool_call_obj, tool_result)
 
             # Create LLM message with clear success info
             if tool_result.success:
@@ -937,6 +978,70 @@ class ClaudeCodeAgent(BaseAgent):
     def _find_tool(self, tool_name: str) -> Optional[BaseTool]:
         """Find a tool by name"""
         return self.tool_registry.get_tool(tool_name)
+        
+    def _emit_tool_events(self, tool_call: ToolCall, tool_result: ToolResult) -> None:
+        """
+        Emit events for system reminders based on tool execution
+        Following Kode's event-driven reminder system
+        """
+        current_time = datetime.datetime.now().timestamp()
+        
+        # File read events
+        if tool_call.name in ['read_file', 'read_many_files']:
+            emit_reminder_event('file:read', {
+                'filePath': tool_call.arguments.get('file_path', ''),
+                'timestamp': current_time,
+                'agentId': self.type
+            })
+            
+        # File edit events  
+        elif tool_call.name in ['edit_file', 'write_file']:
+            emit_reminder_event('file:edited', {
+                'filePath': tool_call.arguments.get('file_path', ''),
+                'timestamp': current_time,
+                'operation': 'update' if tool_call.name == 'edit_file' else 'create',
+                'agentId': self.type
+            })
+            
+        # Todo change events
+        elif tool_call.name == 'todo_write':
+            # Update internal todo tracking
+            todos = tool_call.arguments.get('todos', [])
+            previous_todos = self.todo_items.copy()
+            self.todo_items = todos
+            
+            emit_reminder_event('todo:changed', {
+                'previousTodos': previous_todos,
+                'newTodos': todos,
+                'timestamp': current_time,
+                'agentId': self.type,
+                'changeType': self._determine_todo_change_type(previous_todos, todos)
+            })
+            
+    def _determine_todo_change_type(self, previous_todos: List, new_todos: List) -> str:
+        """Determine the type of todo change"""
+        if len(new_todos) > len(previous_todos):
+            return 'added'
+        elif len(new_todos) < len(previous_todos):
+            return 'removed'
+        else:
+            return 'modified'
+            
+    def update_todo_items(self, todo_items: List[Dict]) -> None:
+        """
+        Update todo items and trigger reminder events
+        This can be called externally when todos are updated
+        """
+        previous_todos = self.todo_items.copy()
+        self.todo_items = todo_items
+        
+        emit_reminder_event('todo:changed', {
+            'previousTodos': previous_todos,
+            'newTodos': todo_items,
+            'timestamp': datetime.datetime.now().timestamp(),
+            'agentId': self.type,
+            'changeType': self._determine_todo_change_type(previous_todos, todo_items)
+        })
     
     def get_capabilities(self) -> Dict[str, Any]:
         """Get agent capabilities"""

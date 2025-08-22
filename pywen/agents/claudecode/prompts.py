@@ -196,28 +196,6 @@ assistant: Clients are marked as failed in the `connectToServer` function in src
 </example>"""
 
     @staticmethod
-    def get_system_reminder_start() -> str:
-        """Get the system reminder start prompt"""
-        return """<system-reminder>
-As you answer the user's questions, you can use the following context:
-
-# important-instruction-reminders
-
-Do what has been asked; nothing more, nothing less.
-NEVER create files unless they're absolutely necessary for achieving your goal.
-ALWAYS prefer editing an existing file to creating a new one.
-NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
-
-      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.
-
-</system-reminder>"""
-
-    @staticmethod
-    def get_system_reminder_end() -> str:
-        """Get the system reminder end prompt"""
-        return """<system-reminder>This is a reminder that your todo list is currently empty. DO NOT mention this to the user explicitly because they are already aware. If you are working on tasks that would benefit from a todo list please use the TodoWrite tool to create one. If not, please feel free to ignore. Again do not mention this message to the user.</system-reminder>"""
-
-    @staticmethod
     def get_check_new_topic_prompt() -> str:
         """Get the check new topic prompt"""
         return "Analyze if this message indicates a new conversation topic. If it does, extract a 2-3 word title that captures the new topic. Format your response as a JSON object with two fields: 'isNewTopic' (boolean) and 'title' (string, or null if isNewTopic is false). Only include these fields, no other text."
