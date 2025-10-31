@@ -13,6 +13,7 @@ from .commands.stats_command import StatsCommand
 from .commands.agent_command import AgentCommand
 from .commands.bug_command import BugCommand
 from .commands.tools_command import ToolsCommand
+from .commands.model_command import ModelCommand
 from .commands.placeholder_commands import (
     PrivacyCommand, ThemeCommand, DocsCommand,
     EditorCommand, McpCommand, ExtensionsCommand,
@@ -38,6 +39,7 @@ class CommandProcessor:
             AgentCommand(),
             BugCommand(),
             ToolsCommand(),
+            ModelCommand(),
             # 占位符命令
             PrivacyCommand(),
             ThemeCommand(),

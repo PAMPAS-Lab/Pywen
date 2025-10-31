@@ -53,6 +53,8 @@ class HelpCommand(BaseCommand):
             ("/mcp", "list configured MCP servers and tools"),
             ("/extensions", "list active extensions"),
             ("/tools", "list available Pywen tools"),
+            ("/agent", "switch between different agents"),
+            ("/model", "switch between different model providers"),
             ("/bug", "submit a bug report"),
             ("/chat", "Manage conversation history. Usage: /chat <list|save|resume> <tag>"),
             ("/quit", "exit the cli"),
