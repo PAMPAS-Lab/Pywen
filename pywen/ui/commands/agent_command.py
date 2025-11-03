@@ -18,7 +18,11 @@ AVAILABLE_AGENTS = {
     "claude": {
         "name": "🧠 Claude Code Agent",
         "description": "AI coding assistant with advanced file operations and project understanding"
-    }
+    },
+    "codex": {
+        "name": "🛸 Codex Agent",
+        "description": "OpenAI Codex based coding assistant with file operation capabilities"
+    },
 }
 
 class AgentCommand(BaseCommand):
@@ -118,5 +122,8 @@ class AgentCommand(BaseCommand):
         elif agent_type == "claude":
             from pywen.agents.claudecode.claude_code_agent import ClaudeCodeAgent
             return ClaudeCodeAgent(config, hook_mgr)
+        elif agent_type == "codex":
+            from pywen.agents.codex.codex_agent import CodexAgent 
+            return CodexAgent(config, hook_mgr)
         else:
             raise ValueError(f"Unknown agent type: {agent_type}")

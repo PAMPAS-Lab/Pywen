@@ -18,6 +18,7 @@ from pywen.config.manager import ConfigManager
 from pywen.core.agent_registry import registry
 from pywen.agents.qwen.qwen_agent import QwenAgent
 from pywen.agents.claudecode.claude_code_agent import ClaudeCodeAgent
+from pywen.agents.codex.codex_agent import CodexAgent 
 from pywen.ui.cli_console import CLIConsole
 from pywen.ui.command_processor import CommandProcessor
 from pywen.ui.utils.keyboard import create_key_bindings
@@ -321,6 +322,7 @@ async def main() -> None:
     agent_classes = {
         "qwen": QwenAgent,
         "claude": ClaudeCodeAgent,
+        "codex": CodexAgent,
     }
     agent_cls = agent_classes.get(args.agent.lower() or "qwen")
     if not agent_cls:

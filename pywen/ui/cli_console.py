@@ -540,7 +540,7 @@ class EventRouter:
         event_type = event.get("type")
         data = event.get("data", {})
 
-        if getattr(agent, "type", "") in ("QwenAgent", "ClaudeCodeAgent"):
+        if getattr(agent, "type", "") in ("QwenAgent", "ClaudeCodeAgent", "CodexAgent"):
             return self._handle_qwen_claude(event_type, data)
         elif getattr(agent, "type", "") == "GeminiResearchDemo":
             return self._handle_gemini(event_type, data)
