@@ -79,7 +79,7 @@ class LLMClient:
 
     async def astream(self, messages: List[Dict[str, str]], **params) -> AsyncGenerator[ResponseEvent, None]:
         # 让类型检查器开心
-        stream = cast(AsyncGenerator[ResponseEvent], self._adapter.astream(messages, **params))
+        stream = cast(AsyncGenerator[ResponseEvent, None], self._adapter.astream(messages, **params))
         async for ch in stream:
             yield ch
 

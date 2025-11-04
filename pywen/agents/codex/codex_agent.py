@@ -53,7 +53,7 @@ class CodexAgent(BaseAgent):
             api_key=config.model_config.api_key,
             base_url=config.model_config.base_url,
             model="gpt-5-codex",
-            wire_api="responses",
+            wire_api="chat",
         )
         self.llm_client = LLMClient(self.llmconfig)
         session_stats.set_current_agent(self.type)
@@ -70,143 +70,112 @@ class CodexAgent(BaseAgent):
 
     def _build_system_prompt(self) -> str:
         import inspect
-
         agent_dir = Path(inspect.getfile(self.__class__)).parent
         codex_md = agent_dir / "gpt_5_codex_prompt.md"
-        default_dir = Path.home() / ".pywen"
-        default_md = default_dir / "codex_system.md"
-        md_env = os.environ.get("PYWEN_CODEX_SYSTEM_MD", "").strip().lower()
-        use_external = False
-        md_path = Path()
+        if not codex_md.exists():
+            raise FileNotFoundError(f"Missing system prompt file '{codex_md}'")
+        return codex_md.read_text(encoding="utf-8")
 
-        if md_env and md_env not in {"0", "false", "1", "true"}:
-            md_path = Path(os.environ["PYWEN_CODEX_SYSTEM_MD"]).expanduser().resolve()
-            use_external = True
-        elif md_env in {"1", "true"}:
-            md_path = default_md
-            use_external = True
-        elif not md_env:
-            if codex_md.exists():
-                md_path = codex_md
-                use_external = True
-
-        if use_external:
-            if not md_path.exists():
-                raise FileNotFoundError(f"Missing system prompt file '{md_path}'")
-            return md_path.read_text(encoding="utf-8")
-
-        tools = "\n".join([f"- **{t.name}**: {t.description}" for t in self.tool_registry.list_tools()])
-        return f"""
-You are PYWEN-CODEX, a CLI-first software engineering agent.
-Be surgical, safe, and fast. Use tools when acting on files, running commands, or browsing.
-Prefer minimal deltas, strong reasoning, and explicit verification.
-
-# Rules
-- Never assume dependencies or commands; inspect the repo first.
-- Explain risky shell commands briefly before execution.
-- Keep outputs concise; prioritize actions and diffs over prose.
-- Use absolute paths for file tools.
-- Record every LLM interaction and tool result (the recorder is already wired).
-
-# Available Tools
-{tools}
-
-# Workflow
-1) Understand: scan codebase and context with grep/glob/read tools.
-2) Plan: outline a short, concrete action list.
-3) Implement: edit/write/run as needed.
-4) Verify: run tests/lints/builds as the project prescribes.
-5) Conclude: stop when the task is satisfied or blocked by missing info.
-
-# Git Awareness
-If a git repo is detected, follow project conventions for commits, diffs, and messages.
-""".strip()
+    def _build_messages(self, system_prompt: str, history: list[dict], tail: list[dict] | None = None) -> list[dict]:
+        msgs = []
+        if system_prompt:
+            msgs.append({"role": "system", "content": system_prompt})
+        msgs.extend(history)
+        if tail:
+            msgs.extend(tail)
+        return msgs
 
     async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
         model_name = self.llmconfig.model
         provider = self.llmconfig.provider
-        max_tokens = 400000
+        max_tokens = 200000
         if self.cli_console:
             self.cli_console.set_max_context_tokens(max_tokens)
-
         self.original_user_task = user_message
         self.current_task_turns = 0
         session_stats.record_task_start(self.type)
-
         self.trajectory_recorder.start_recording(
             task=user_message, provider=provider, model=model_name, max_steps=self.max_iterations
         )
 
-        current_message = user_message
-
         while self.current_task_turns < self.max_task_turns:
             self.current_task_turns += 1
-
             if self.current_task_turns == 1:
-                yield {"type": "user_message", "data": {"message": current_message, "turn": self.current_task_turns}}
+                yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_task_turns}}
 
+            """
             yield {
                 "type": "task_continuation",
-                "data": {"message": current_message, "turn": self.current_task_turns, "reason": "Continuing task per CodexAgent policy"},
+                "data": {"message": user_message, "turn": self.current_task_turns, "reason": "Continuing task per CodexAgent policy"},
             }
-
-            turn = Turn(id=str(uuid.uuid4()), user_message=current_message)
+            """
+            turn = Turn(id=str(uuid.uuid4()), user_message= user_message)
             self.current_turn = turn
             self.turns.append(turn)
 
             try:
-                self.conversation_history.append(LLMMessage(role="system", content=self.system_prompt))
-                self.conversation_history.append(LLMMessage(role="user", content=current_message))
-
                 total_chunks: List[str] = []
                 tool_cycles = 0
                 while True:
+                    self.conversation_history.append(LLMMessage(role="user", content=user_message))
+                    #TODO. 拼接内容有错误
+                    print(self.conversation_history)
                     stage = self._run_responses_stage()
                     async for ev in stage:
                         et, data = ev["type"], ev["data"]
                         if et == "llm_stream_start":
+                            print(f"ev is:{ev}")
                             yield ev
                         elif et == "llm_chunk":
+                            print("llm_chunk")
                             total_chunks.append(data.get("content", ""))
                             yield ev
                         elif et == "tool_call_start":
+                            print(f"tool call start: {et}")
                             yield ev
                         elif et == "tool_result":
+                            print(f"tool_result")
                             tool_cycles += 1
                             yield ev
                             break
                         elif et == "task_complete":
+                            print(f"task_complete")
                             turn.add_assistant_response(data.get("reasoning", ""))
                             turn.complete(TurnStatus.COMPLETED)
                             yield ev
                             return
                         elif et == "max_turns_reached":
+                            print(f"max_turns_reached")
                             turn.complete(TurnStatus.MAX_ITERATIONS)
                             yield ev
                             return
                         elif et == "error":
+                            print(f"error")
                             turn.complete(TurnStatus.ERROR)
                             yield ev
                             return
                     else:
+                        print("error, LLM stage ended unexpectedly")
                         yield {"type": "error", "data": {"error": "LLM stage ended unexpectedly"}}
                         turn.complete(TurnStatus.ERROR)
                         return
 
             except Exception as e:
+                print("exception !:", str(e))
                 yield {"type": "error", "data": {"error": str(e)}}
                 turn.complete(TurnStatus.ERROR)
                 break
 
-    def _prepare_messages_for_iteration(self) -> List[Dict[str, str]]:
-        return [{"role": m.role, "content": m.content} for m in self.conversation_history]
-
     async def _run_responses_stage(self) -> AsyncGenerator[Dict[str, Any], None]:
-        messages = self._prepare_messages_for_iteration()
+        messages = self._build_messages(
+            system_prompt=self.system_prompt,
+            history=[{"role": m.role, "content": m.content} for m in self.conversation_history],
+        )
+ 
         params = {"api": "responses", "model": self.llmconfig.model}
         yield {"type": "llm_stream_start", "data": {}}
         collected: List[str] = []
-        tool_cycles_guard = getattr(self, "max_iterations", 1_000_000)
+        tool_cycles_guard = self.max_iterations
 
         async for evt in self.llm_client.astream(messages, **params):
             et = evt.type
