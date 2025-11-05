@@ -29,8 +29,8 @@ class ResponseEvent:
         return ResponseEvent("created", meta or {})
 
     @staticmethod
-    def output_item_done(meta: Optional[Dict[str, Any]] = None) -> "ResponseEvent":
-        return ResponseEvent("output_item.done", meta or {})
+    def output_item_done(meta: Dict[str, Any]) -> "ResponseEvent":
+        return ResponseEvent("output_item.done", meta) 
 
     @staticmethod
     def text_delta(delta: str) -> "ResponseEvent":

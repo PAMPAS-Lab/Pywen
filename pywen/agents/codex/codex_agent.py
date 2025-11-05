@@ -155,7 +155,6 @@ class CodexAgent(BaseAgent):
                     return
 
             except Exception as e:
-                print("exception !:", str(e))
                 yield {"type": "error", "data": {"error": str(e)}}
                 turn.complete(TurnStatus.ERROR)
                 break
@@ -179,10 +178,19 @@ class CodexAgent(BaseAgent):
                         yield {"type": "llm_chunk", "data": {"content": data}}
     
                 elif et == "output_item.done":
+                    t = getattr(data, "type", "")
                     call_id = getattr(data, "call_id", "")
-                    args = getattr(data, "args", {})
                     tool_name = getattr(data, "name", "")    
-                    yield {"type": "tool_call_start", "data": {"call_id": call_id, "name": tool_name, "arguments": args}}
+                    playload = {}
+                    if t == "function_call":
+                        args = getattr(data, "arguments", {})
+                        playload = {"call_id": call_id, "name": tool_name, "arguments": args}
+                    elif t == "custom_tool_call":
+                        input = getattr(data, "input", "")
+                        playload = {"call_id": call_id, "name": tool_name, "input": input}
+                    else:
+                        continue
+                    yield {"type": "tool_call_start", "data": playload}
     
                 elif et in ("response.completed", "completed"):
                     final_text = "".join(collected).strip()

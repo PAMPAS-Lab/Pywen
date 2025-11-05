@@ -29,7 +29,7 @@ def _tool_feedback_to_tool_result_block(payload: Dict[str, Any]) -> Dict[str, An
             {
                 "type": "tool_result",
                 "tool_call_id": call_id,
-                "output": _as_output_text_items(out_text),
+                "content": _as_output_text_items(out_text),
                 "is_error": (False if success else True),
             }
         ],
@@ -62,12 +62,23 @@ def _to_responses_input(messages: List[Dict[str, str]]) -> ResponseInputParam:
                 items.append(_tool_feedback_to_tool_result_block(obj))
                 continue 
         text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
-        items.append(
-            {
+
+        if role in ("system", "user"):
+            items.append({
                 "role": role,
                 "content": [{"type": "input_text", "text": text}],
-            }
-        )
+            })
+        elif role == "assistant":
+            items.append({
+                "role": role,
+                "content": [{"type": "output_text", "text": text}],
+            })
+        else:
+            items.append({
+                "role": "user",
+                "content": [{"type": "input_text", "text": text}],
+            })
+
     return cast(ResponseInputParam, items)
 
 class ChatAggregationAdapter:
