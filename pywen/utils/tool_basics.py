@@ -10,17 +10,20 @@ class ToolCall:
     """Represents a tool call from the LLM."""
     call_id: str
     name: str
-    arguments: Dict[str, Any]
+    arguments: Optional[Dict[str, Any]] = None
+    type: Optional[str] = None
+    input: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
             "call_id": self.call_id,
             "name": self.name,
-            "arguments": self.arguments
+            "arguments": self.arguments,
+            "type" : self.type,
+            "input": self.input
         }
 
-@dataclass
 class ToolStatus(Enum):
     """Tool execution status."""
     SUCCESS = "success"

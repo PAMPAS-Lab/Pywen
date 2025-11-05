@@ -1,6 +1,4 @@
-import os
-import uuid
-import json
+import uuid,json
 import asyncio
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -9,7 +7,7 @@ from typing import Dict, List, Optional, Any, AsyncGenerator
 
 from pywen.agents.base_agent import BaseAgent
 from pywen.llm.llm_client import LLMClient, LLMConfig, LLMMessage
-from pywen.utils.token_limits import TokenLimits, ModelProvider
+from pywen.utils.tool_basics import ToolCall
 from pywen.core.session_stats import session_stats
 
 class TurnStatus(Enum):
@@ -25,7 +23,7 @@ class Turn:
     iterations: int = 0
     status: TurnStatus = TurnStatus.ACTIVE
     assistant_messages: List[str] = field(default_factory=list)
-    tool_calls: List[Any] = field(default_factory=list)
+    tool_calls: List[ToolCall] = field(default_factory=list)
     tool_results: List[Any] = field(default_factory=list)
     llm_responses: List[Any] = field(default_factory=list)
     total_tokens: int = 0
@@ -53,17 +51,18 @@ class CodexAgent(BaseAgent):
             api_key=config.model_config.api_key,
             base_url=config.model_config.base_url,
             model="gpt-5-codex",
-            wire_api="chat",
+            wire_api="responses",
         )
         self.llm_client = LLMClient(self.llmconfig)
         session_stats.set_current_agent(self.type)
         self.max_task_turns = self.llmconfig.retry
-        self.current_task_turns = 0
         self.max_iterations = config.max_iterations
+        self.current_task_turns = 0
         self.original_user_task = ""
         self.turns: List[Turn] = []
         self.current_turn: Optional[Turn] = None
         self.system_prompt = self._build_system_prompt()
+        self.conversation_history: List[LLMMessage] = []
 
     def get_enabled_tools(self) -> List[str]:
         return ['shell_tool', 'update_plan', 'apply_patch', ]
@@ -76,13 +75,32 @@ class CodexAgent(BaseAgent):
             raise FileNotFoundError(f"Missing system prompt file '{codex_md}'")
         return codex_md.read_text(encoding="utf-8")
 
-    def _build_messages(self, system_prompt: str, history: list[dict], tail: list[dict] | None = None) -> list[dict]:
-        msgs = []
+    def _build_messages(self, system_prompt: str, history: List[LLMMessage]) -> List[Dict[str, Any]]:
+        msgs: List[Dict[str, Any]] = []
         if system_prompt:
             msgs.append({"role": "system", "content": system_prompt})
-        msgs.extend(history)
-        if tail:
-            msgs.extend(tail)
+
+        for m in history:
+            one: Dict[str, Any] = {"role": m.role}
+            if m.content is not None:
+                one["content"] = m.content
+            if m.tool_call_id:
+                one["tool_call_id"] = m.tool_call_id
+            if m.tool_calls:
+                one["tool_calls"] = []
+                for tc in m.tool_calls:
+                    payload: Dict[str, Any] = {
+                        "call_id": getattr(tc, "call_id", None),
+                        "name": getattr(tc, "name", None),
+                    }
+                    args = getattr(tc, "arguments", None)
+                    if args is not None:
+                        payload["arguments"] = args
+                    inp = getattr(tc, "input", None)
+                    if inp is not None:
+                        payload["input"] = inp
+                    one["tool_calls"].append(payload)
+            msgs.append(one)
         return msgs
 
     async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
@@ -97,6 +115,7 @@ class CodexAgent(BaseAgent):
         self.trajectory_recorder.start_recording(
             task=user_message, provider=provider, model=model_name, max_steps=self.max_iterations
         )
+        self.conversation_history.append(LLMMessage(role="user", content=user_message))
 
         while self.current_task_turns < self.max_task_turns:
             self.current_task_turns += 1
@@ -111,16 +130,15 @@ class CodexAgent(BaseAgent):
             self.current_turn = turn
             self.turns.append(turn)
             total_chunks: List[str] = []
-            tool_cycles = 0
+
             try:
                 yield {"type": "turn_start", "data": {"turn_id": turn.id, "message": user_message}}
-                user_msg = LLMMessage(role="user", content=user_message)
-                self.conversation_history.append(user_msg)
                 messages = self._build_messages(
                     system_prompt=self.system_prompt,
-                    history=[{"role": m.role, "content": m.content} for m in self.conversation_history],
+                    history=self.conversation_history,
                 )
                 params = {"model": model_name, "api":"responses"}
+
                 stage = self._responses_event_convert(turn, messages=messages, params= params)
                                                                                        
                 async for ev in stage:
@@ -133,26 +151,21 @@ class CodexAgent(BaseAgent):
                     elif et == "tool_call_start":
                         yield ev
                     elif et == "tool_result":
-                        tool_cycles += 1
                         yield ev
                         break
                     elif et == "task_complete":
                         turn.add_assistant_response(data.get("reasoning", ""))
                         turn.complete(TurnStatus.COMPLETED)
                         yield ev
-                        return
+                        break
                     elif et == "max_turns_reached":
                         turn.complete(TurnStatus.MAX_ITERATIONS)
                         yield ev
-                        return
+                        break
                     elif et == "error":
                         turn.complete(TurnStatus.ERROR)
                         yield ev
                         return
-                else:
-                    yield {"type": "error", "data": {"error": "LLM stage ended unexpectedly"}}
-                    turn.complete(TurnStatus.ERROR)
-                    return
 
             except Exception as e:
                 yield {"type": "error", "data": {"error": str(e)}}
@@ -161,51 +174,138 @@ class CodexAgent(BaseAgent):
 
     async def _responses_event_convert(self, turn: Turn, messages, params) -> AsyncGenerator[Dict[str, Any], None]:
         """在这里处理LLM的事件，转换为agent事件流"""
-        while turn.iterations < self.max_iterations:
-            turn.iterations += 1
+        iterations = 0
+        while iterations < self.max_iterations:
+            iterations += 1
+            turn.iterations = iterations
             yield {"type": "iteration_start", "data": {"iteration": turn.iterations}}
 
-            collected: List[str] = []
+            collected_text_parts: List[str] = []
+            tool_calls_buffer: List[ToolCall] = []
 
             async for evt in self.llm_client.astream(messages, **params):
                 et, data = evt.type , evt.data
+
                 if et == "created":
                     yield {"type": "llm_stream_start", "data": {"message": "LLM response stream started"}}
 
                 elif et == "output_text.delta":
                     if data and isinstance(data, str):
-                        collected.append(data)
+                        collected_text_parts.append(data)
                         yield {"type": "llm_chunk", "data": {"content": data}}
     
                 elif et == "output_item.done":
-                    t = getattr(data, "type", "")
+                    ftype = getattr(data, "type", "")
                     call_id = getattr(data, "call_id", "")
                     tool_name = getattr(data, "name", "")    
-                    playload = {}
-                    if t == "function_call":
+                    tc = None
+                    if ftype == "function_call":
                         args = getattr(data, "arguments", {})
-                        playload = {"call_id": call_id, "name": tool_name, "arguments": args}
-                    elif t == "custom_tool_call":
+                        tc = ToolCall(call_id= call_id, type = ftype, name = tool_name, arguments = args)
+                    elif ftype == "custom_tool_call":
                         input = getattr(data, "input", "")
-                        playload = {"call_id": call_id, "name": tool_name, "input": input}
+                        tc = ToolCall(call_id= call_id, type = ftype, name = tool_name, input = input)
                     else:
                         continue
-                    yield {"type": "tool_call_start", "data": playload}
-    
+                    tool_calls_buffer.append(tc)
+                    turn.add_tool_call(tc)
+
+                    async for tool_event in self._process_tool_calls_streaming(turn, tool_calls_buffer):
+                        yield tool_event
+
                 elif et in ("response.completed", "completed"):
-                    final_text = "".join(collected).strip()
-                    self.conversation_history.append(LLMMessage(role="assistant", content=final_text))
-                    yield {"type": "task_complete", "data": {"total_turns": self._tool_cycles_so_far(), "reasoning": final_text}}
+                    yield {"type": "turn_complete", "data": {"status": "completed"}}
                     return
-    
                 elif et == "error":
                     yield {"type": "error", "data": {"error": str(data)}}
                     return
-            yield {"type": "error", "data": {"error": "LLM stream ended without 'response.completed'"}}
 
-        if turn.iterations >= self.max_iterations and turn.status == TurnStatus.ACTIVE:
-            turn.complete(TurnStatus.MAX_ITERATIONS)
-            yield {"type": "max_iterations", "data": {"iterations": turn.iterations}}
+            yield {"type": "error", "data": {"error": "LLM stream ended without 'response.completed'"}}
+            return 
+
+        turn.complete(TurnStatus.MAX_ITERATIONS)
+        yield {"type": "max_iterations", "data": {"iterations": turn.iterations}}
 
     def _tool_cycles_so_far(self) -> int:
         return sum(1 for m in self.conversation_history if m.role == "tool")
+
+    async def _process_tool_calls_streaming(self, turn: Turn, tool_calls) -> AsyncGenerator[Dict[str, Any], None]:
+        """流式处理工具调用."""
+        
+        for tool_call in tool_calls:
+            turn.add_tool_call(tool_call)
+            
+            yield {"type": "tool_call_start", "data": {
+                "call_id": tool_call.call_id,
+                "name": tool_call.name,
+                "arguments": tool_call.arguments
+            }}
+            
+            if hasattr(self, 'cli_console') and self.cli_console:
+                tool = self.tool_registry.get_tool(tool_call.name)
+                if tool:
+                    confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
+                    if confirmation_details:
+                        #TODO，从console剥离
+                        confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
+                        if not confirmed:
+                                tool_msg = LLMMessage(
+                                    role="tool",
+                                    content="Tool execution was cancelled by user",
+                                    tool_call_id=tool_call.call_id
+                                )
+                                self.conversation_history.append(tool_msg)
+
+                                yield {"type": "tool_result", "data": {
+                                    "call_id": tool_call.call_id,
+                                    "name": tool_call.name,
+                                    "result": "Tool execution rejected by user",
+                                    "success": False,
+                                    "error": "Tool execution rejected by user"
+                                }}
+                                continue
+            
+            try:
+                results = await self.tool_executor.execute_tools([tool_call], self.type)
+                result = results[0]
+
+
+                yield {"type": "tool_result", "data": {
+                    "call_id": tool_call.call_id,
+                    "name": tool_call.name,
+                    "result": result.result,
+                    "success": result.success,
+                    "error": result.error,
+                    "arguments": tool_call.arguments
+                }}
+
+                turn.add_tool_result(result)
+                
+                if isinstance(result.result, dict):
+                    content = result.result.get('summary', str(result.result)) or str(result.error)
+                else:
+                    content = str(result.result) or str(result.error)
+
+                tool_msg = LLMMessage(
+                    role="tool",
+                    content=content,
+                    tool_call_id=tool_call.call_id
+                )
+                self.conversation_history.append(tool_msg)
+
+            except Exception as e:
+                error_msg = f"Tool execution failed: {str(e)}"
+                yield {"type": "tool_error", "data": {
+                    "call_id": tool_call.call_id,
+                    "name": tool_call.name,
+                    "error": error_msg
+                }}
+                
+                tool_msg = LLMMessage(
+                    role="tool",
+                    content=error_msg,
+                    tool_call_id=tool_call.call_id
+                )
+                self.conversation_history.append(tool_msg)
+
+
