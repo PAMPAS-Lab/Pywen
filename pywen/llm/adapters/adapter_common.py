@@ -7,6 +7,8 @@ EventType = Literal[
     "output_text.delta",
     "reasoning_summary.delta",
     "reasoning_content.delta",
+    "reasoning_summary_part.added",
+    "reasoning_summary_text.done",
     "output_item.done",
     "completed",
     "error",
@@ -14,6 +16,7 @@ EventType = Literal[
     "token_usage",
     "tool_call.delta",
     "tool_call.ready",
+    "web_search_begin",
 ]
 
 @dataclass
@@ -24,6 +27,10 @@ class ResponseEvent:
     @staticmethod
     def created(meta: Optional[Dict[str, Any]] = None) -> "ResponseEvent":
         return ResponseEvent("created", meta or {})
+
+    @staticmethod
+    def output_item_done(meta: Optional[Dict[str, Any]] = None) -> "ResponseEvent":
+        return ResponseEvent("output_item.done", meta or {})
 
     @staticmethod
     def text_delta(delta: str) -> "ResponseEvent":
@@ -48,4 +55,16 @@ class ResponseEvent:
     def tool_call_ready(call_id: str, name: str | None, args: dict, kind: str):
         payload = {"call_id": call_id, "name": name, "args": args, "kind": kind}
         return ResponseEvent("tool_call.ready", payload)
+
+    @staticmethod
+    def web_search_begin(call_id: str):
+        return ResponseEvent("web_search_begin", {"call_id": call_id})
+
+    @staticmethod
+    def reasoning_summary_part_added(delta: str) -> "ResponseEvent":
+        return ResponseEvent("reasoning_summary_part.added", delta)
+
+    @staticmethod 
+    def reasoning_summary_text_done(meta: Optional[Dict[str, Any]] = None) -> "ResponseEvent":
+        return ResponseEvent("reasoning_summary_text.done", meta or {})
 

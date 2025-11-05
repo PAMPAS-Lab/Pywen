@@ -149,7 +149,7 @@ class OpenAIAdapter():
                     yield evt.data
             return
 
-    async def astream(self, messages: List[Dict[str, str]], **params) -> AsyncGenerator[ResponseEvent, None]:
+    async def astream(self, messages: List[Dict[str, Any]], **params) -> AsyncGenerator[ResponseEvent, None]:
         api_choice = self._pick_api(params.get("api"))
         model = params.get("model", self._default_model)
 
@@ -218,57 +218,69 @@ class OpenAIAdapter():
             stream=True,
             **{k: v for k, v in params.items() if k not in ("model", "api")}
         )
-
-        func_args_buf: Dict[str, List[str]] = {}
-        func_call_id: Dict[str, str] = {}
         async for event in stream:
             if event.type == "response.created":
                 payload = {"response_id": event.response.id}
                 yield ResponseEvent.created(payload)
-            elif event.type == "response.output_text.delta":
-                delta = getattr(event, "delta", "") or ""
-                if delta:
-                    yield ResponseEvent.text_delta(delta)
-            elif event.type == "response.function_call_arguments.delta":
-                func_args_buf.setdefault(event.item_id, []).append(event.delta)
-                func_call_id[event.item_id] = getattr(event, "call_id", "")
-            elif event.type == "response.function_call_arguments.done":
-                raw = "".join(func_args_buf.get(event.item_id, []))
-                func_args_buf.pop(event.item_id, "")
-                call_id = func_call_id.pop(event.item_id, "")
-                try:
-                    args = {} if raw.strip() == "" else json.loads(raw)
-                except Exception:
-                    args = {"__raw__": raw}
 
-                yield ResponseEvent("tool_call.ready", {
-                    "item_id": event.item_id,
-                    "call_id": call_id,
-                    "args": args,
-                    "kind": "function",
-                })
+            elif event.type == "response.failed":
+                #TODO,完善错误上报
+                error_msg = getattr(event, "error", "") or "error"
+                yield ResponseEvent.error(error_msg)
+
+            elif event.type == "response.output_item.done":
+                yield ResponseEvent.output_item_done({"item_id": event.item})
+
+            elif event.type == "response.output_text.delta":
+                yield ResponseEvent.text_delta(event.delta)
+
+            elif event.type == "response.reasoning_summary_text.delta":
+                # TODO.
+                yield ResponseEvent.text_delta(event.delta)
+
+            elif event.type == "response.reasoning_text.delta":
+                # TODO.
+                yield ResponseEvent.text_delta(event.delta)
+
+            elif event.type == "response.content_part.done" or \
+                event.type == "response.function_call_arguments.delta" or \
+                event.type == "custom_tool_call_input.delta" or \
+                event.type == "custom_tool_call_input.done" or \
+                event.type == "response.in_progress" or \
+                event.type == "response.output_text.done":
+                # ignore for now
+                pass
+
+            elif event.type == "response.output_item.added":
+                item = event.item 
+                if item.type == "web_search_call":
+                    call_id = item.id 
+                    yield ResponseEvent.web_search_begin(call_id)
+
+            elif event.type == "response.reasoning_summary_part.added":
+                yield ResponseEvent.reasoning_summary_part_added("")
+
+            elif event.type == "response.reasoning_summary_text.done":
+                yield ResponseEvent.reasoning_summary_text_done({})
+
+            elif event.type == "response.function_call_arguments.delta":
+                yield ResponseEvent.tool_call_delta(event.call_id, event.name, event.delta, kind="function")
+
             elif event.type == "response.custom_tool_call_input.delta":
-                func_args_buf.setdefault(event.item_id, []).append(event.delta)
-                func_call_id[event.item_id] = getattr(event, "call_id", "")
+                yield ResponseEvent.tool_call_delta(event.item_id, '', event.delta, kind="custom")
+
+            elif event.type == "response.function_call_arguments.done":
+                playload = {'item_id': event.item_id, "arguments": event.arguments, "kind": "function"}
+                yield ResponseEvent("tool_call.ready", playload)
 
             elif event.type == "response.custom_tool_call_input.done":
-                raw = "".join(func_args_buf.get(event.item_id, []))
-                func_args_buf.pop(event.item_id, "")
-                call_id = func_call_id.pop(event.item_id, "")
-                try:
-                    args = {} if raw.strip() == "" else json.loads(raw)
-                except Exception:
-                    args = {"__raw__": raw}
+                payload = {'item_id': event.item_id, "input": event.input, "kind": "custom"}
+                yield ResponseEvent("tool_call.ready", payload)
 
-                yield ResponseEvent("tool_call.ready", {
-                    "item_id": event.item_id,
-                    "call_id": call_id,
-                    "args": args,
-                    "kind": "custom",
-                })
             elif event.type == "response.completed":
                 yield ResponseEvent.completed({})
                 break
+
             elif event.type == "error":
                 yield ResponseEvent.error(getattr(event, "error", "") or "error")
                 break

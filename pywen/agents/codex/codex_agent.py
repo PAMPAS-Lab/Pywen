@@ -102,63 +102,57 @@ class CodexAgent(BaseAgent):
             self.current_task_turns += 1
             if self.current_task_turns == 1:
                 yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_task_turns}}
-
-            """
-            yield {
-                "type": "task_continuation",
-                "data": {"message": user_message, "turn": self.current_task_turns, "reason": "Continuing task per CodexAgent policy"},
-            }
-            """
+            else:
+                yield {
+                    "type": "task_continuation",
+                    "data": {"message": user_message, "turn": self.current_task_turns, "reason": "Continuing task per CodexAgent policy"},
+                }
             turn = Turn(id=str(uuid.uuid4()), user_message= user_message)
             self.current_turn = turn
             self.turns.append(turn)
-
+            total_chunks: List[str] = []
+            tool_cycles = 0
             try:
-                total_chunks: List[str] = []
-                tool_cycles = 0
-                while True:
-                    self.conversation_history.append(LLMMessage(role="user", content=user_message))
-                    #TODO. 拼接内容有错误
-                    print(self.conversation_history)
-                    stage = self._run_responses_stage()
-                    async for ev in stage:
-                        et, data = ev["type"], ev["data"]
-                        if et == "llm_stream_start":
-                            print(f"ev is:{ev}")
-                            yield ev
-                        elif et == "llm_chunk":
-                            print("llm_chunk")
-                            total_chunks.append(data.get("content", ""))
-                            yield ev
-                        elif et == "tool_call_start":
-                            print(f"tool call start: {et}")
-                            yield ev
-                        elif et == "tool_result":
-                            print(f"tool_result")
-                            tool_cycles += 1
-                            yield ev
-                            break
-                        elif et == "task_complete":
-                            print(f"task_complete")
-                            turn.add_assistant_response(data.get("reasoning", ""))
-                            turn.complete(TurnStatus.COMPLETED)
-                            yield ev
-                            return
-                        elif et == "max_turns_reached":
-                            print(f"max_turns_reached")
-                            turn.complete(TurnStatus.MAX_ITERATIONS)
-                            yield ev
-                            return
-                        elif et == "error":
-                            print(f"error")
-                            turn.complete(TurnStatus.ERROR)
-                            yield ev
-                            return
-                    else:
-                        print("error, LLM stage ended unexpectedly")
-                        yield {"type": "error", "data": {"error": "LLM stage ended unexpectedly"}}
-                        turn.complete(TurnStatus.ERROR)
+                yield {"type": "turn_start", "data": {"turn_id": turn.id, "message": user_message}}
+                user_msg = LLMMessage(role="user", content=user_message)
+                self.conversation_history.append(user_msg)
+                messages = self._build_messages(
+                    system_prompt=self.system_prompt,
+                    history=[{"role": m.role, "content": m.content} for m in self.conversation_history],
+                )
+                params = {"model": model_name, "api":"responses"}
+                stage = self._responses_event_convert(turn, messages=messages, params= params)
+                                                                                       
+                async for ev in stage:
+                    et, data = ev.get("type"), ev.get("data", {})
+                    if et == "llm_stream_start":
+                        yield ev
+                    elif et == "llm_chunk":
+                        total_chunks.append(data.get("content", ""))
+                        yield ev
+                    elif et == "tool_call_start":
+                        yield ev
+                    elif et == "tool_result":
+                        tool_cycles += 1
+                        yield ev
+                        break
+                    elif et == "task_complete":
+                        turn.add_assistant_response(data.get("reasoning", ""))
+                        turn.complete(TurnStatus.COMPLETED)
+                        yield ev
                         return
+                    elif et == "max_turns_reached":
+                        turn.complete(TurnStatus.MAX_ITERATIONS)
+                        yield ev
+                        return
+                    elif et == "error":
+                        turn.complete(TurnStatus.ERROR)
+                        yield ev
+                        return
+                else:
+                    yield {"type": "error", "data": {"error": "LLM stage ended unexpectedly"}}
+                    turn.complete(TurnStatus.ERROR)
+                    return
 
             except Exception as e:
                 print("exception !:", str(e))
@@ -166,91 +160,44 @@ class CodexAgent(BaseAgent):
                 turn.complete(TurnStatus.ERROR)
                 break
 
-    async def _run_responses_stage(self) -> AsyncGenerator[Dict[str, Any], None]:
-        messages = self._build_messages(
-            system_prompt=self.system_prompt,
-            history=[{"role": m.role, "content": m.content} for m in self.conversation_history],
-        )
- 
-        params = {"api": "responses", "model": self.llmconfig.model}
-        yield {"type": "llm_stream_start", "data": {}}
-        collected: List[str] = []
-        tool_cycles_guard = self.max_iterations
+    async def _responses_event_convert(self, turn: Turn, messages, params) -> AsyncGenerator[Dict[str, Any], None]:
+        """在这里处理LLM的事件，转换为agent事件流"""
+        while turn.iterations < self.max_iterations:
+            turn.iterations += 1
+            yield {"type": "iteration_start", "data": {"iteration": turn.iterations}}
 
-        async for evt in self.llm_client.astream(messages, **params):
-            et = evt.type
-            data = getattr(evt, "data", {}) or {}
+            collected: List[str] = []
 
-            if et in ("response.output_text.delta", "output_text.delta"):
-                delta_text = data if isinstance(data, str) else data.get("delta", "")
-                if delta_text:
-                    collected.append(delta_text)
-                    yield {"type": "llm_chunk", "data": {"content": delta_text}}
+            async for evt in self.llm_client.astream(messages, **params):
+                et, data = evt.type , evt.data
+                if et == "created":
+                    yield {"type": "llm_stream_start", "data": {"message": "LLM response stream started"}}
 
-            elif et == "tool_call.ready":
-                if self._tool_cycles_so_far() >= tool_cycles_guard:
-                    yield {"type": "max_turns_reached", "data": {"total_turns": self._tool_cycles_so_far(), "max_turns": tool_cycles_guard}}
+                elif et == "output_text.delta":
+                    if data and isinstance(data, str):
+                        collected.append(data)
+                        yield {"type": "llm_chunk", "data": {"content": data}}
+    
+                elif et == "output_item.done":
+                    call_id = getattr(data, "call_id", "")
+                    args = getattr(data, "args", {})
+                    tool_name = getattr(data, "name", "")    
+                    yield {"type": "tool_call_start", "data": {"call_id": call_id, "name": tool_name, "arguments": args}}
+    
+                elif et in ("response.completed", "completed"):
+                    final_text = "".join(collected).strip()
+                    self.conversation_history.append(LLMMessage(role="assistant", content=final_text))
+                    yield {"type": "task_complete", "data": {"total_turns": self._tool_cycles_so_far(), "reasoning": final_text}}
                     return
+    
+                elif et == "error":
+                    yield {"type": "error", "data": {"error": str(data)}}
+                    return
+            yield {"type": "error", "data": {"error": "LLM stream ended without 'response.completed'"}}
 
-                call_id = data.get("call_id") or ""
-                args = data.get("args") or {}
-                tool_name = data.get("name") or data.get("kind") or "__tool__"
-
-                yield {"type": "tool_call_start", "data": {"call_id": call_id, "name": tool_name, "arguments": args}}
-
-                success, result, error = await self._invoke_tool_safe(tool_name, args)
-                yield {"type": "tool_result", "data": {
-                    "call_id": call_id, "name": tool_name, "result": result, "success": success, "error": error, "arguments": args
-                }}
-
-                tool_feedback_text = self._format_tool_feedback_text(call_id, result, success, error)
-                self.conversation_history.append(LLMMessage(role="tool", content=tool_feedback_text))
-
-                return
-
-            elif et in ("response.completed", "completed"):
-                final_text = "".join(collected).strip()
-                self.conversation_history.append(LLMMessage(role="assistant", content=final_text))
-                yield {"type": "task_complete", "data": {"total_turns": self._tool_cycles_so_far(), "reasoning": final_text}}
-                return
-
-            elif et == "error":
-                yield {"type": "error", "data": {"error": str(data)}}
-                return
-
-        yield {"type": "error", "data": {"error": "LLM stream ended without 'response.completed'"}}
+        if turn.iterations >= self.max_iterations and turn.status == TurnStatus.ACTIVE:
+            turn.complete(TurnStatus.MAX_ITERATIONS)
+            yield {"type": "max_iterations", "data": {"iterations": turn.iterations}}
 
     def _tool_cycles_so_far(self) -> int:
         return sum(1 for m in self.conversation_history if m.role == "tool")
-
-    async def _invoke_tool_safe(self, name: str, args: Dict[str, Any]):
-        #改造，工具执行
-        try:
-            tool = self.tool_registry.get(name)
-            if tool is None:
-                return False, None, f"tool '{name}' not found"
-            if hasattr(tool, "run_async") and asyncio.iscoroutinefunction(tool.run_async):
-                result = await tool.run_async(**args)
-                return True, result, None
-            elif hasattr(tool, "run"):
-                result = tool.run(**args)
-                return True, result, None
-            else:
-                return False, None, f"tool '{name}' has no runnable interface"
-        except Exception as e:
-            return False, None, f"{type(e).__name__}: {e}"
-
-    def _format_tool_feedback_text(self, call_id: str, result: Any, success: bool, error: Optional[str]) -> str:
-        payload = {
-            "tool_feedback": {
-                "call_id": call_id,
-                "success": success,
-                "error": error,
-                "result": result,
-            }
-        }
-        try:
-            return json.dumps(payload, ensure_ascii=False)
-        except Exception:
-            return f'{{"tool_feedback": {{"call_id":"{call_id}","success":{success},"error":{json.dumps(error)}, "result": "{str(result)}"}}}}'
-
