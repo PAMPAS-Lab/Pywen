@@ -53,10 +53,14 @@ class ArchitectTool(BaseTool):
         """Architect tool is read-only and safe"""
         return False
     
-    async def execute(self, prompt: str, context: str = "", **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute the architect tool for technical analysis
         """
+        # Extract parameters from kwargs
+        prompt = kwargs.get('prompt', '')
+        context = kwargs.get('context', '')
+        
         try:
             if not self._agent_registry:
                 return ToolResult(

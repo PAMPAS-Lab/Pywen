@@ -76,10 +76,14 @@ Usage notes:
         """Task tool is generally safe as it uses restricted tools"""
         return False
     
-    async def execute(self, description: str, prompt: str, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute the task tool by launching a sub-agent with todo list management
         """
+        # Extract parameters from kwargs
+        description = kwargs.get('description', '')
+        prompt = kwargs.get('prompt', '')
+        
         try:
             if not self._agent_registry:
                 return ToolResult(

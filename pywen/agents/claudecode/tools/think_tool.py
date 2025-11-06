@@ -48,10 +48,13 @@ The tool simply logs your thought process for better transparency and does not e
         """Think tool is completely safe"""
         return False
     
-    async def execute(self, thought: str, **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute the think tool by logging the thought
         """
+        # Extract parameters from kwargs
+        thought = kwargs.get('thought', '')
+        
         try:
             # Log the thought with timestamp
             timestamp = datetime.now().isoformat()

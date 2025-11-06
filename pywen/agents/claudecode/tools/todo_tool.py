@@ -400,10 +400,13 @@ class TodoTool(BaseTool):
         """Todo tool is safe"""
         return False
     
-    async def execute(self, todos: List[Dict[str, Any]], **kwargs) -> ToolResult:
+    async def execute(self, **kwargs) -> ToolResult:
         """
         Execute the todo tool to update the todo list
         """
+        # Extract parameters from kwargs
+        todos = kwargs.get('todos', [])
+        
         try:
             # Validate todos
             validation_result = self._validate_todos(todos)
