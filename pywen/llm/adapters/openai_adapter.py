@@ -4,8 +4,8 @@ from typing import AsyncGenerator, Dict, Generator, Iterator, List, Any, Optiona
 from openai import OpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.responses import ResponseInputParam
+from pywen.utils.llm_basics import LLMMessage, LLMResponse
 from .adapter_common import ResponseEvent
-
 
 def _as_output_text_items(text: str) -> List[Dict[str, str]]:
     return [{"type": "output_text", "text": text}]
@@ -126,60 +126,60 @@ class OpenAIAdapter():
         self._default_model = default_model
         self._wire_api = wire_api
 
-    def chat(self, messages: List[Dict[str, str]], **params) -> str:
+    #同步非流式,未实现
+    def generate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse: 
         api_choice = self._pick_api(params.get("api"))
         model = params.get("model", self._default_model)
 
         if api_choice == "chat":
             return self._chat_nonstream_sync(messages, model, params)
-        if api_choice == "responses":
+        elif api_choice == "responses":
             return self._responses_nonstream_sync(messages, model, params)
+        else:
+            return LLMResponse("")
 
-    async def achat(self, messages: List[Dict[str, str]], **params) -> str:
+    #异步非流式,未实现
+    async def agenerate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse: 
         api_choice = self._pick_api(params.get("api"))
         model = params.get("model", self._default_model)
 
+        res = LLMResponse("")
         if api_choice == "chat":
-            return await self._chat_nonstream_async(messages, model, params)
-        if api_choice == "responses":
-            return await self._responses_nonstream_async(messages, model, params)
+            res = await self._chat_nonstream_async(messages, model, params)
+        elif api_choice == "responses":
+            res = await self._responses_nonstream_async(messages, model, params)
+        return res
 
-    def stream(self, messages: List[Dict[str, str]], **params) -> Generator[str, None, None]:
+    #同步流式,未实现
+    def stream_respons(self, messages: List[Dict[str, str]], **params) -> Generator[ResponseEvent, None, None]:
         api_choice = self._pick_api(params.get("api"))
         model = params.get("model", self._default_model)
-
         if api_choice == "chat":
             for evt in self._chat_stream_responses_sync(messages, model, params):
                 if evt.type == "output_text.delta" and isinstance(evt.data, str):
                     yield evt.data
-            return
-
-        if api_choice == "responses":
+        elif api_choice == "responses":
             for evt in self._responses_stream_responses_sync(messages, model, params):
                 if evt.type == "output_text.delta" and isinstance(evt.data, str):
                     yield evt.data
-            return
 
-    async def astream(self, messages: List[Dict[str, Any]], **params) -> AsyncGenerator[ResponseEvent, None]:
+    #异步流式
+    async def astream_response(self, messages: List[Dict[str, Any]], **params) -> AsyncGenerator[ResponseEvent, None]:
         api_choice = self._pick_api(params.get("api"))
         model = params.get("model", self._default_model)
-
         if api_choice == "chat":
             async for evt in self._chat_stream_responses_async(messages, model, params):
                 yield evt
-            return
-
-        if api_choice == "responses":
+        elif api_choice == "responses":
             async for evt in self._responses_stream_responses_async(messages, model, params):
                 yield evt
-            return
 
     def _pick_api(self, override: Optional[str]) -> str:
-        if override in ("responses", "chat", "auto"):
+        if override in ("responses", "chat"):
             return override
         return self._wire_api
 
-    def _responses_nonstream_sync(self, messages, model, params) -> str:
+    def _responses_nonstream_sync(self, messages, model, params) -> LLMResponse:
         input_items = _to_responses_input(messages)
         resp = self._sync.responses.create(
             model=model,
@@ -187,9 +187,9 @@ class OpenAIAdapter():
             stream=False,
             **{k: v for k, v in params.items() if k not in ("model", "api")}
         )
-        return getattr(resp, "output_text", "") or ""
+        return LLMResponse("")
 
-    async def _responses_nonstream_async(self, messages, model, params) -> str:
+    async def _responses_nonstream_async(self, messages, model, params) -> LLMResponse:
         input_items = _to_responses_input(messages)
         resp = await self._async.responses.create(
             model=model,
@@ -197,7 +197,7 @@ class OpenAIAdapter():
             stream=False,
             **{k: v for k, v in params.items() if k not in ("model", "api")}
         )
-        return getattr(resp, "output_text", "") or ""
+        return LLMResponse("")
 
     def _responses_stream_responses_sync(self, messages, model, params) -> Generator[ResponseEvent, None, None]:
         input_items = _to_responses_input(messages)
@@ -259,8 +259,7 @@ class OpenAIAdapter():
                 event.type == "custom_tool_call_input.done" or \
                 event.type == "response.in_progress" or \
                 event.type == "response.output_text.done":
-                # ignore for now
-                pass
+                continue
 
             elif event.type == "response.output_item.added":
                 item = event.item 
@@ -281,11 +280,11 @@ class OpenAIAdapter():
                 yield ResponseEvent.tool_call_delta(event.item_id, '', event.delta, kind="custom")
 
             elif event.type == "response.function_call_arguments.done":
-                playload = {'item_id': event.item_id, "arguments": event.arguments, "kind": "function"}
+                playload = {'item_id': event.item_id, "input": "", "arguments": event.arguments, "kind": "function"}
                 yield ResponseEvent("tool_call.ready", playload)
 
             elif event.type == "response.custom_tool_call_input.done":
-                payload = {'item_id': event.item_id, "input": event.input, "kind": "custom"}
+                payload = {'item_id': event.item_id, "input": event.input, "arguments": "", "kind": "custom"}
                 yield ResponseEvent("tool_call.ready", payload)
 
             elif event.type == "response.completed":
@@ -296,7 +295,7 @@ class OpenAIAdapter():
                 yield ResponseEvent.error(getattr(event, "error", "") or "error")
                 break
 
-    def _chat_nonstream_sync(self, messages, model, params) -> str:
+    def _chat_nonstream_sync(self, messages, model, params) -> LLMResponse:
         chat_msgs = _to_chat_messages(messages)
         resp = self._sync.chat.completions.create(
             model=model,
@@ -305,11 +304,9 @@ class OpenAIAdapter():
             **{k: v for k, v in params.items() if k not in ("model", "api")}
         )
         choice = (resp.choices or [None])[0]
-        if not choice:
-            return ""
-        return choice.message.content or ""
+        return LLMResponse("")
 
-    async def _chat_nonstream_async(self, messages, model, params) -> str:
+    async def _chat_nonstream_async(self, messages, model, params) -> LLMResponse:
         chat_msgs = _to_chat_messages(messages)
         resp = await self._async.chat.completions.create(
             model=model,
@@ -318,9 +315,8 @@ class OpenAIAdapter():
             **{k: v for k, v in params.items() if k not in ("model", "api")}
         )
         choice = (resp.choices or [None])[0]
-        if not choice:
-            return ""
-        return choice.message.content or ""
+        return LLMResponse("")
+
 
     def _chat_stream_responses_sync(self, messages, model, params) -> Generator[ResponseEvent, None, None]:
         chat_msgs = _to_chat_messages(messages)

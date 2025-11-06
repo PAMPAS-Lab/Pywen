@@ -85,54 +85,42 @@ class CodexAgent(BaseAgent):
             self.current_task_turns += 1
             if self.current_task_turns == 1:
                 yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_task_turns}}
-            else:
-                yield {
-                    "type": "task_continuation",
-                    "data": {"message": user_message, "turn": self.current_task_turns, "reason": "Continuing task per CodexAgent policy"},
-                }
+
             turn = Turn(id=str(uuid.uuid4()), user_message= user_message)
             self.current_turn = turn
             self.turns.append(turn)
             total_chunks: List[str] = []
+            messages = self._build_messages(
+                system_prompt=self.system_prompt,
+                history=self.conversation_history,
+            )
+            params = {"model": model_name, "api":"responses"}
 
-            try:
-                yield {"type": "turn_start", "data": {"turn_id": turn.id, "message": user_message}}
-                messages = self._build_messages(
-                    system_prompt=self.system_prompt,
-                    history=self.conversation_history,
-                )
-                params = {"model": model_name, "api":"responses"}
-
-                stage = self._responses_event_process(turn, messages=messages, params= params)
-                                                                                       
-                async for ev in stage:
-                    et, data = ev.get("type"), ev.get("data", {})
-                    if et == "llm_stream_start" or et == "tool_call_start":
-                        yield ev
-                    elif et == "llm_chunk":
-                        total_chunks.append(data.get("content", ""))
-                        yield ev
-                    elif et == "tool_result":
-                        yield ev
-                        break
-                    elif et == "task_complete":
-                        turn.add_assistant_response(data.get("reasoning", ""))
-                        turn.complete(TurnStatus.COMPLETED)
-                        yield ev
-                        break
-                    elif et == "max_turns_reached":
-                        turn.complete(TurnStatus.MAX_ITERATIONS)
-                        yield ev
-                        break
-                    elif et == "error":
-                        turn.complete(TurnStatus.ERROR)
-                        yield ev
-                        return
-
-            except Exception as e:
-                yield {"type": "error", "data": {"error": str(e)}}
-                turn.complete(TurnStatus.ERROR)
-                break
+            stage = self._responses_event_process(turn, messages=messages, params= params)
+                                                                                   
+            async for ev in stage:
+                et, data = ev.get("type"), ev.get("data", {})
+                if et == "llm_stream_start" or et == "tool_call_start":
+                    yield ev
+                elif et == "llm_chunk":
+                    total_chunks.append(data.get("content", ""))
+                    yield ev
+                elif et == "tool_result":
+                    yield ev
+                    break
+                elif et == "task_complete":
+                    turn.add_assistant_response(data.get("reasoning", ""))
+                    turn.complete(TurnStatus.COMPLETED)
+                    yield ev
+                    break
+                elif et == "max_turns_reached":
+                    turn.complete(TurnStatus.MAX_ITERATIONS)
+                    yield ev
+                    break
+                elif et == "error":
+                    turn.complete(TurnStatus.ERROR)
+                    yield ev
+                    return
 
     def _build_system_prompt(self) -> str:
         import inspect
@@ -179,23 +167,19 @@ class CodexAgent(BaseAgent):
             collected_text_parts: List[str] = []
             tool_calls_buffer: List[ToolCall] = []
 
-            async for evt in self.llm_client.astream(messages, **params):
-                et, data = evt.type , evt.data
-
-                if et == "created":
+            async for evt in self.llm_client.astream_response(messages, **params):
+                if evt.type == "created":
                     yield {"type": "llm_stream_start", "data": {"message": "LLM response stream started"}}
 
-                elif et == "output_text.delta":
-                    if data and isinstance(data, str):
-                        collected_text_parts.append(data)
-                        yield {"type": "llm_chunk", "data": {"content": data}}
+                elif evt.type == "output_text.delta":
+                    collected_text_parts.append(evt.data)
+                    yield {"type": "llm_chunk", "data": {"content": data}}
     
-                elif et == "output_item.done":
-                    ftype = getattr(data, "type", "")
+                elif evt.type == "output_item.done":
                     call_id = getattr(data, "call_id", "")
                     tool_name = getattr(data, "name", "")    
                     tc = None
-                    if ftype == "function_call":
+                    if evt.item == "function_call":
                         args = getattr(data, "arguments", {})
                         tc = ToolCall(call_id= call_id, type = ftype, name = tool_name, arguments = args)
                     elif ftype == "custom_tool_call":
@@ -209,10 +193,10 @@ class CodexAgent(BaseAgent):
                     async for tool_event in self._process_one_tool_call(turn, tc):
                         yield tool_event
 
-                elif et == "completed":
+                elif evt.type == "completed":
                     yield {"type": "task_complete", "data": {"status": "completed"}}
                     return
-                elif et == "error":
+                elif evt.type == "error":
                     yield {"type": "error", "data": {"error": str(data)}}
                     return
 
@@ -269,82 +253,4 @@ class CodexAgent(BaseAgent):
             
             tool_msg = LLMMessage(role="tool", content=error_msg, tool_call_id=tool_call.call_id)
             self.conversation_history.append(tool_msg)
-
-    async def _process_tool_calls_streaming(self, turn: Turn, tool_calls) -> AsyncGenerator[Dict[str, Any], None]:
-        """流式处理工具调用."""
-        for tool_call in tool_calls:
-            turn.add_tool_call(tool_call)
-            
-            yield {"type": "tool_call_start", "data": {
-                "call_id": tool_call.call_id,
-                "name": tool_call.name,
-                "arguments": tool_call.arguments
-            }}
-            
-            if self.cli_console:
-                tool = self.tool_registry.get_tool(tool_call.name)
-                if tool:
-                    confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
-                    if confirmation_details:
-                        #TODO，从console剥离
-                        confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
-                        if not confirmed:
-                                tool_msg = LLMMessage(
-                                    role="tool",
-                                    content="Tool execution was cancelled by user",
-                                    tool_call_id=tool_call.call_id
-                                )
-                                self.conversation_history.append(tool_msg)
-
-                                yield {"type": "tool_result", "data": {
-                                    "call_id": tool_call.call_id,
-                                    "name": tool_call.name,
-                                    "result": "Tool execution rejected by user",
-                                    "success": False,
-                                    "error": "Tool execution rejected by user"
-                                }}
-                                continue
-            
-            try:
-                results = await self.tool_executor.execute_tools([tool_call], self.type)
-                result = results[0]
-
-                yield {"type": "tool_result", "data": {
-                    "call_id": tool_call.call_id,
-                    "name": tool_call.name,
-                    "result": result.result,
-                    "success": result.success,
-                    "error": result.error,
-                    "arguments": tool_call.arguments
-                }}
-
-                turn.add_tool_result(result)
-                
-                if isinstance(result.result, dict):
-                    content = result.result.get('summary', str(result.result)) or str(result.error)
-                else:
-                    content = str(result.result) or str(result.error)
-
-                tool_msg = LLMMessage(
-                    role="tool",
-                    content=content,
-                    tool_call_id=tool_call.call_id
-                )
-                self.conversation_history.append(tool_msg)
-
-            except Exception as e:
-                error_msg = f"Tool execution failed: {str(e)}"
-                yield {"type": "tool_error", "data": {
-                    "call_id": tool_call.call_id,
-                    "name": tool_call.name,
-                    "error": error_msg
-                }}
-                
-                tool_msg = LLMMessage(
-                    role="tool",
-                    content=error_msg,
-                    tool_call_id=tool_call.call_id
-                )
-                self.conversation_history.append(tool_msg)
-
 

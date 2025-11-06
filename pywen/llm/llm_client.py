@@ -4,14 +4,13 @@ from typing import Generator,AsyncGenerator,Dict, cast, List, Optional, Protocol
 from dataclasses import dataclass
 from .adapters.openai_adapter import OpenAIAdapter
 from .adapters.adapter_common import ResponseEvent
-from pywen.utils.llm_basics import LLMMessage 
-# from .adapters.anthropic_adapter import AnthropicAdapter
+from pywen.utils.llm_basics import LLMMessage, LLMResponse
 
 class ProviderAdapter(Protocol):
-    def chat(self, messages: List[Dict[str, str]], **params) -> str: ...
-    async def achat(self, messages: List[Dict[str, str]], **params) -> str: ...
-    def stream(self, messages: List[Dict[str, str]], **params) -> Generator[str, None, None]: ...
-    async def astream(self, messages: List[Dict[str, str]], **params) -> AsyncGenerator[ResponseEvent, None]: ...
+    def generate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse: ...
+    def stream_response(self, messages: List[Dict[str, str]], **params) -> Generator[ResponseEvent, None, None]: ...
+    async def agenerate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse: ...
+    async def astream_response(self, messages: List[Dict[str, str]], **params) -> AsyncGenerator[ResponseEvent, None]: ...
 
 @dataclass
 class LLMConfig():
@@ -43,43 +42,18 @@ class LLMClient:
         #     return AnthropicAdapter(cfg)
         raise ValueError(f"Unknown provider: {cfg.provider}")
 
-    def chat(self, messages: List[Dict[str, str]], **params) -> str:
-        last_e = None
-        for attempt in range(self.cfg.retry + 1):
-            try:
-                return self._adapter.chat(messages, **params)
-            except Exception as e:
-                last_e = e
-                if attempt >= self.cfg.retry:
-                    raise
-                time.sleep(0.5 * (2 ** attempt))
-        if last_e:
-            raise last_e
-        return ""
+    def generate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse:
+        return LLMResponse("")
 
-    async def achat(self, messages: List[Dict[str, str]], **params) -> str:
-        last_e = None
-        for attempt in range(self.cfg.retry + 1):
-            try:
-                return await asyncio.wait_for(
-                    self._adapter.achat(messages, **params),
-                    timeout=self.cfg.timeout
-                )
-            except Exception as e:
-                last_e = e
-                if attempt >= self.cfg.retry:
-                    raise
-                await asyncio.sleep(0.5 * (2 ** attempt))
-        if last_e:
-            raise last_e
-        return ""
+    def stream_response(self, messages: List[Dict[str, str]], **params) -> Generator[ResponseEvent, None, None]: 
+        pass
 
-    def stream(self, messages: List[Dict[str, str]], **params) -> Generator[str, None, None]:
-        yield from self._adapter.stream(messages, **params)
+    async def agenerate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse:
+        pass
 
-    async def astream(self, messages: List[Dict[str, str]], **params) -> AsyncGenerator[ResponseEvent, None]:
+    async def astream_response(self, messages: List[Dict[str, str]], **params) -> AsyncGenerator[ResponseEvent, None]: 
         # 让类型检查器开心
-        stream = cast(AsyncGenerator[ResponseEvent, None], self._adapter.astream(messages, **params))
+        stream = cast(AsyncGenerator[ResponseEvent, None], self._adapter.astream_response(messages, **params))
         async for ch in stream:
             yield ch
 
