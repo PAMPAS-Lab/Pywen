@@ -67,42 +67,6 @@ class CodexAgent(BaseAgent):
     def get_enabled_tools(self) -> List[str]:
         return ['shell_tool', 'update_plan', 'apply_patch', ]
 
-    def _build_system_prompt(self) -> str:
-        import inspect
-        agent_dir = Path(inspect.getfile(self.__class__)).parent
-        codex_md = agent_dir / "gpt_5_codex_prompt.md"
-        if not codex_md.exists():
-            raise FileNotFoundError(f"Missing system prompt file '{codex_md}'")
-        return codex_md.read_text(encoding="utf-8")
-
-    def _build_messages(self, system_prompt: str, history: List[LLMMessage]) -> List[Dict[str, Any]]:
-        msgs: List[Dict[str, Any]] = []
-        if system_prompt:
-            msgs.append({"role": "system", "content": system_prompt})
-
-        for m in history:
-            one: Dict[str, Any] = {"role": m.role}
-            if m.content is not None:
-                one["content"] = m.content
-            if m.tool_call_id:
-                one["tool_call_id"] = m.tool_call_id
-            if m.tool_calls:
-                one["tool_calls"] = []
-                for tc in m.tool_calls:
-                    payload: Dict[str, Any] = {
-                        "call_id": getattr(tc, "call_id", None),
-                        "name": getattr(tc, "name", None),
-                    }
-                    args = getattr(tc, "arguments", None)
-                    if args is not None:
-                        payload["arguments"] = args
-                    inp = getattr(tc, "input", None)
-                    if inp is not None:
-                        payload["input"] = inp
-                    one["tool_calls"].append(payload)
-            msgs.append(one)
-        return msgs
-
     async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
         model_name = self.llmconfig.model
         provider = self.llmconfig.provider
@@ -139,16 +103,14 @@ class CodexAgent(BaseAgent):
                 )
                 params = {"model": model_name, "api":"responses"}
 
-                stage = self._responses_event_convert(turn, messages=messages, params= params)
+                stage = self._responses_event_process(turn, messages=messages, params= params)
                                                                                        
                 async for ev in stage:
                     et, data = ev.get("type"), ev.get("data", {})
-                    if et == "llm_stream_start":
+                    if et == "llm_stream_start" or et == "tool_call_start":
                         yield ev
                     elif et == "llm_chunk":
                         total_chunks.append(data.get("content", ""))
-                        yield ev
-                    elif et == "tool_call_start":
                         yield ev
                     elif et == "tool_result":
                         yield ev
@@ -172,14 +134,48 @@ class CodexAgent(BaseAgent):
                 turn.complete(TurnStatus.ERROR)
                 break
 
-    async def _responses_event_convert(self, turn: Turn, messages, params) -> AsyncGenerator[Dict[str, Any], None]:
+    def _build_system_prompt(self) -> str:
+        import inspect
+        agent_dir = Path(inspect.getfile(self.__class__)).parent
+        codex_md = agent_dir / "gpt_5_codex_prompt.md"
+        if not codex_md.exists():
+            raise FileNotFoundError(f"Missing system prompt file '{codex_md}'")
+        return codex_md.read_text(encoding="utf-8")
+
+    def _build_messages(self, system_prompt: str, history: List[LLMMessage]) -> List[Dict[str, Any]]:
+        msgs: List[Dict[str, Any]] = []
+        if system_prompt:
+            msgs.append({"role": "system", "content": system_prompt})
+
+        for m in history:
+            one: Dict[str, Any] = {"role": m.role}
+            if m.content is not None:
+                one["content"] = m.content
+            if m.tool_call_id:
+                one["tool_call_id"] = m.tool_call_id
+            if m.tool_calls:
+                one["tool_calls"] = []
+                for tc in m.tool_calls:
+                    payload: Dict[str, Any] = {
+                        "call_id": getattr(tc, "call_id", None),
+                        "name": getattr(tc, "name", None),
+                    }
+                    args = getattr(tc, "arguments", None)
+                    if args is not None:
+                        payload["arguments"] = args
+                    inp = getattr(tc, "input", None)
+                    if inp is not None:
+                        payload["input"] = inp
+                    one["tool_calls"].append(payload)
+            msgs.append(one)
+        return msgs
+
+    async def _responses_event_process(self, turn: Turn, messages, params) -> AsyncGenerator[Dict[str, Any], None]:
         """在这里处理LLM的事件，转换为agent事件流"""
         iterations = 0
         while iterations < self.max_iterations:
             iterations += 1
             turn.iterations = iterations
-            yield {"type": "iteration_start", "data": {"iteration": turn.iterations}}
-
             collected_text_parts: List[str] = []
             tool_calls_buffer: List[ToolCall] = []
 
@@ -210,11 +206,11 @@ class CodexAgent(BaseAgent):
                     tool_calls_buffer.append(tc)
                     turn.add_tool_call(tc)
 
-                    async for tool_event in self._process_tool_calls_streaming(turn, tool_calls_buffer):
+                    async for tool_event in self._process_one_tool_call(turn, tc):
                         yield tool_event
 
-                elif et in ("response.completed", "completed"):
-                    yield {"type": "turn_complete", "data": {"status": "completed"}}
+                elif et == "completed":
+                    yield {"type": "task_complete", "data": {"status": "completed"}}
                     return
                 elif et == "error":
                     yield {"type": "error", "data": {"error": str(data)}}
@@ -229,9 +225,53 @@ class CodexAgent(BaseAgent):
     def _tool_cycles_so_far(self) -> int:
         return sum(1 for m in self.conversation_history if m.role == "tool")
 
+    async def _process_one_tool_call(self, turn: Turn, tool_call) -> AsyncGenerator[Dict[str, Any], None]:
+        turn.add_tool_call(tool_call)
+        payload = { "call_id": tool_call.call_id, "name": tool_call.name, "arguments": tool_call.arguments}
+        yield {"type": "tool_call_start", "data": payload}
+        if not self.cli_console:
+            return
+        tool = self.tool_registry.get_tool(tool_call.name)
+        if not tool:
+            return
+        confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
+        if not  confirmation_details:
+            return
+        confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
+        if not confirmed:
+            tool_msg = LLMMessage(role="tool", content="Tool execution was cancelled by user", tool_call_id=tool_call.call_id)
+            self.conversation_history.append(tool_msg)
+            payload = {"call_id": tool_call.call_id, 
+                        "name": tool_call.name, 
+                        "result": "Tool execution rejected by user",
+                        "success":False,
+                        "error": "Tool execution rejuected by user",
+                        }
+            yield {"type": "tool_result", "data": payload}
+            return
+        try:
+            results = await self.tool_executor.execute_tools([tool_call], self.type)
+            result = results[0]
+            payload = {"call_id": tool_call.call_id, "name": tool_call.name, "result": result.result,
+                       "success": result.success, "error": result.error, "arguments": tool_call.arguments}
+            yield {"type": "tool_result", "data": payload}
+            turn.add_tool_result(result)
+            if isinstance(result.result, dict):
+                content = result.result.get('summary', str(result.result)) or str(result.error)
+            else:
+                content = str(result.result) or str(result.error)
+            tool_msg = LLMMessage(role="tool", content=content, tool_call_id=tool_call.call_id)
+            self.conversation_history.append(tool_msg)
+
+        except Exception as e:
+            error_msg = f"Tool execution failed: {str(e)}"
+            yield {"type": "tool_error", "data": {"call_id": tool_call.call_id, "name": tool_call.name, "error": error_msg}}
+            
+            tool_msg = LLMMessage(role="tool", content=error_msg, tool_call_id=tool_call.call_id)
+            self.conversation_history.append(tool_msg)
+
     async def _process_tool_calls_streaming(self, turn: Turn, tool_calls) -> AsyncGenerator[Dict[str, Any], None]:
         """流式处理工具调用."""
-        
         for tool_call in tool_calls:
             turn.add_tool_call(tool_call)
             
@@ -241,7 +281,7 @@ class CodexAgent(BaseAgent):
                 "arguments": tool_call.arguments
             }}
             
-            if hasattr(self, 'cli_console') and self.cli_console:
+            if self.cli_console:
                 tool = self.tool_registry.get_tool(tool_call.name)
                 if tool:
                     confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
@@ -268,7 +308,6 @@ class CodexAgent(BaseAgent):
             try:
                 results = await self.tool_executor.execute_tools([tool_call], self.type)
                 result = results[0]
-
 
                 yield {"type": "tool_result", "data": {
                     "call_id": tool_call.call_id,
