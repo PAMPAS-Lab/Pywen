@@ -240,7 +240,23 @@ class OpenAIAdapter():
                 yield ResponseEvent.error(error_msg)
 
             elif event.type == "response.output_item.done":
-                yield ResponseEvent.output_item_done({"item_id": event.item})
+                call_id, name , args, kind = '', '','',''
+                if event.item.type == "function_call":
+                    call_id = event.item.call_id
+                    name = event.item.name
+                    args = event.item.arguments
+                    kind = "function"
+                    yield ResponseEvent.tool_call_ready(call_id, name, args, kind)
+                elif event.item.type == "reasoning":
+                    continue
+                elif event.item.type == "custom_tool_call":
+                    call_id = event.item.call_id
+                    name = event.item.name
+                    args = event.item.input
+                    kind = "custom"
+                    yield ResponseEvent.tool_call_ready(call_id, name, args, kind)
+                else:
+                    yield ResponseEvent.output_item_done({"item_id": event.item})
 
             elif event.type == "response.output_text.delta":
                 yield ResponseEvent.text_delta(event.delta)
@@ -255,8 +271,9 @@ class OpenAIAdapter():
 
             elif event.type == "response.content_part.done" or \
                 event.type == "response.function_call_arguments.delta" or \
-                event.type == "custom_tool_call_input.delta" or \
-                event.type == "custom_tool_call_input.done" or \
+                event.type == "response.function_call_arguments.done" or \
+                event.type == "response.custom_tool_call_input.delta" or \
+                event.type == "response.custom_tool_call_input.done" or \
                 event.type == "response.in_progress" or \
                 event.type == "response.output_text.done":
                 continue
@@ -272,20 +289,6 @@ class OpenAIAdapter():
 
             elif event.type == "response.reasoning_summary_text.done":
                 yield ResponseEvent.reasoning_summary_text_done({})
-
-            elif event.type == "response.function_call_arguments.delta":
-                yield ResponseEvent.tool_call_delta(event.call_id, event.name, event.delta, kind="function")
-
-            elif event.type == "response.custom_tool_call_input.delta":
-                yield ResponseEvent.tool_call_delta(event.item_id, '', event.delta, kind="custom")
-
-            elif event.type == "response.function_call_arguments.done":
-                playload = {'item_id': event.item_id, "input": "", "arguments": event.arguments, "kind": "function"}
-                yield ResponseEvent("tool_call.ready", playload)
-
-            elif event.type == "response.custom_tool_call_input.done":
-                payload = {'item_id': event.item_id, "input": event.input, "arguments": "", "kind": "custom"}
-                yield ResponseEvent("tool_call.ready", payload)
 
             elif event.type == "response.completed":
                 yield ResponseEvent.completed({})

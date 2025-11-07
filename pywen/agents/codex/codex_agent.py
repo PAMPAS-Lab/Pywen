@@ -160,66 +160,43 @@ class CodexAgent(BaseAgent):
 
     async def _responses_event_process(self, turn: Turn, messages, params) -> AsyncGenerator[Dict[str, Any], None]:
         """在这里处理LLM的事件，转换为agent事件流"""
-        iterations = 0
-        while iterations < self.max_iterations:
-            iterations += 1
-            turn.iterations = iterations
-            collected_text_parts: List[str] = []
-            tool_calls_buffer: List[ToolCall] = []
 
-            async for evt in self.llm_client.astream_response(messages, **params):
-                if evt.type == "created":
-                    yield {"type": "llm_stream_start", "data": {"message": "LLM response stream started"}}
+        async for evt in self.llm_client.astream_response(messages, **params):
+            if evt.type == "created":
+                yield {"type": "llm_stream_start", "data": {"message": "LLM response stream started"}}
 
-                elif evt.type == "output_text.delta":
-                    collected_text_parts.append(evt.data)
-                    yield {"type": "llm_chunk", "data": {"content": data}}
+            elif evt.type == "output_text.delta":
+                yield {"type": "llm_chunk", "data": {"content": evt.data}}
     
-                elif evt.type == "output_item.done":
-                    call_id = getattr(data, "call_id", "")
-                    tool_name = getattr(data, "name", "")    
-                    tc = None
-                    if evt.item == "function_call":
-                        args = getattr(data, "arguments", {})
-                        tc = ToolCall(call_id= call_id, type = ftype, name = tool_name, arguments = args)
-                    elif ftype == "custom_tool_call":
-                        input = getattr(data, "input", "")
-                        tc = ToolCall(call_id= call_id, type = ftype, name = tool_name, input = input)
-                    else:
-                        continue
-                    tool_calls_buffer.append(tc)
-                    turn.add_tool_call(tc)
+            elif evt.type == "tool_call.ready":
+                print(evt)
+                tc = ToolCall(call_id= evt.data.call_id, name = evt.data.name, arguments = evt.data.args)
+                async for tool_event in self._process_one_tool_call(tc):
+                    yield tool_event
 
-                    async for tool_event in self._process_one_tool_call(turn, tc):
-                        yield tool_event
+            elif evt.type == "completed":
+                yield {"type": "task_complete", "data": {"status": "completed"}}
+                return
+            elif evt.type == "error":
+                yield {"type": "error", "data": {"error": str(data)}}
+                return
 
-                elif evt.type == "completed":
-                    yield {"type": "task_complete", "data": {"status": "completed"}}
-                    return
-                elif evt.type == "error":
-                    yield {"type": "error", "data": {"error": str(data)}}
-                    return
-
-            yield {"type": "error", "data": {"error": "LLM stream ended without 'response.completed'"}}
-            return 
-
-        turn.complete(TurnStatus.MAX_ITERATIONS)
-        yield {"type": "max_iterations", "data": {"iterations": turn.iterations}}
+        yield {"type": "error", "data": {"error": "LLM stream ended without 'response.completed'"}}
+        return 
 
     def _tool_cycles_so_far(self) -> int:
         return sum(1 for m in self.conversation_history if m.role == "tool")
 
-    async def _process_one_tool_call(self, turn: Turn, tool_call) -> AsyncGenerator[Dict[str, Any], None]:
-        turn.add_tool_call(tool_call)
+    async def _process_one_tool_call(self, tool_call) -> AsyncGenerator[Dict[str, Any], None]:
         payload = { "call_id": tool_call.call_id, "name": tool_call.name, "arguments": tool_call.arguments}
         yield {"type": "tool_call_start", "data": payload}
-        if not self.cli_console:
-            return
         tool = self.tool_registry.get_tool(tool_call.name)
         if not tool:
             return
         confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
         if not  confirmation_details:
+            return
+        if not self.cli_console:
             return
         confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
         if not confirmed:
@@ -246,7 +223,6 @@ class CodexAgent(BaseAgent):
                 content = str(result.result) or str(result.error)
             tool_msg = LLMMessage(role="tool", content=content, tool_call_id=tool_call.call_id)
             self.conversation_history.append(tool_msg)
-
         except Exception as e:
             error_msg = f"Tool execution failed: {str(e)}"
             yield {"type": "tool_error", "data": {"call_id": tool_call.call_id, "name": tool_call.name, "error": error_msg}}
