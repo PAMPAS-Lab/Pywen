@@ -1,9 +1,9 @@
 from __future__ import annotations
 import os
 import uuid,json
-from dataclasses import dataclass
+from dataclasses import dataclass 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, override
 from pywen.tools.base import BaseTool, ToolRiskLevel
 from pywen.utils.tool_basics import ToolResult
 
@@ -68,7 +68,7 @@ class ApplyPatchArgs:
     patch: str
     workdir: Optional[str]
 
-def parse_patch(patch: str, strict: bool = True, allow_heredoc: bool = False) -> ApplyPatchArgs:
+def parse_patch(patch: str, allow_heredoc: bool = False) -> ApplyPatchArgs:
     lines = [ln for ln in patch.strip().splitlines()]
 
     try:
@@ -355,9 +355,9 @@ class ApplyPatchTool(BaseTool):
             display_name="Apply Patch",
             description="Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
             parameter_schema={
-                "type": "grammar",
-                "syntax": "regex",
-                "definition": r"""
+"type": "grammar",
+"syntax": "lark",
+"definition": r"""
 start: begin_patch hunk+ end_patch
 begin_patch: "*** Begin Patch" LF
 end_patch: "*** End Patch" LF?
@@ -378,7 +378,6 @@ eof_line: "*** End of File" LF
 
 %import common.LF
 """
-
             },
             is_output_markdown=False,
             can_update_output=False,
@@ -392,6 +391,7 @@ eof_line: "*** End of File" LF
             return ToolRiskLevel.SAFE
         return ToolRiskLevel.MEDIUM
 
+    @override
     async def _generate_confirmation_message(self, **kwargs) -> str:
         dry = kwargs.get("dry_run", False)
         mode = "dry-run" if dry else "apply"
@@ -399,14 +399,12 @@ eof_line: "*** End of File" LF
         return f"[{mode}] Apply patch to workspace: {wd}"
 
     async def execute(self, **kwargs) -> ToolResult:
-        call_id = kwargs.get("call_id") or str(uuid.uuid4())
         patch_text: str = kwargs["patch"]
         workdir = Path(kwargs.get("workdir") or os.getcwd()).resolve()
-        strict = bool(kwargs.get("strict", True))
         allow_heredoc = bool(kwargs.get("allow_heredoc", False))
         dry_run = bool(kwargs.get("dry_run", False))
         try:
-            args = parse_patch(patch_text, strict=strict, allow_heredoc=allow_heredoc)
+            args = parse_patch(patch_text, allow_heredoc=allow_heredoc)
             if args.workdir:
                 workdir = Path(args.workdir).expanduser().resolve()
 
@@ -466,16 +464,24 @@ eof_line: "*** End of File" LF
             upd_n = sum(1 for k in kinds if k == "Update")
             short = f"Applied patch (add={add_n}, delete={del_n}, update={upd_n}, dry_run={dry_run})"
 
-            return ToolResult(call_id=call_id, result=json.dumps(summary, ensure_ascii=False),
+            return ToolResult(call_id= "", result=json.dumps(summary, ensure_ascii=False),
                 error=None, display=None, metadata=summary, summary=short,)
 
         except (InvalidPatchError, InvalidHunkError, ApplyError, ParseError) as e:
-            return ToolResult(call_id=call_id, result=None, error=str(e), display=None,
-                metadata={"dry_run": dry_run, "cwd": str(workdir), "strict": strict, "allow_heredoc": allow_heredoc,},
+            return ToolResult(call_id= "", result=None, error=str(e), display=None,
+                metadata={"dry_run": dry_run, "cwd": str(workdir), "allow_heredoc": allow_heredoc,},
                 summary="apply_patch failed",
             )
         except Exception as e:
-            return ToolResult(call_id=call_id, result=None, error=f"Unexpected error: {e}", display=None, 
-                    metadata={ "dry_run": dry_run, "cwd": str(workdir), "strict": strict, "allow_heredoc": allow_heredoc,},
+            return ToolResult(call_id= "", result=None, error=f"Unexpected error: {e}", display=None, 
+                    metadata={ "dry_run": dry_run, "cwd": str(workdir), "allow_heredoc": allow_heredoc,},
                     summary="apply_patch crashed",
             )
+
+    def build(self) -> Dict[str, Any]:
+        return {
+                "type" : "custom",
+                "name" : self.name,
+                "description": self.description,
+                "format": self.parameter_schema,
+                }

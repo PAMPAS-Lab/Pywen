@@ -61,8 +61,7 @@ class UpdatePlanTool(BaseTool):
             name="update_plan",
             display_name="Update Plan",
             description=(
-                "Update the task plan with an optional explanation and a list of steps. "
-                "At most one item can be 'in_progress' at any time."
+                "Updates the task plan.Provide an optional explanation and a list of plan items, each with a step and status.At most one step can be in_progress at a time."
             ),
             parameter_schema={
                 "type": "object",
@@ -114,3 +113,12 @@ class UpdatePlanTool(BaseTool):
         }
 
         return ToolResult(call_id="", result=md, metadata={"payload": payload})
+
+    def build(self) -> Dict[str, Any]:
+        return {
+                "type" : "function",
+                "name" : self.name,
+                "description": self.description,
+                "strict": False,
+                "parameters": self.parameter_schema,
+                }
