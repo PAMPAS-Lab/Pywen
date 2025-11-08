@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 from typing import Dict, List, Mapping, Any, AsyncGenerator
-
 from pywen.agents.base_agent import BaseAgent
 from pywen.llm.llm_client import LLMClient, LLMConfig, LLMMessage
 from pywen.utils.tool_basics import ToolCall
+from pywen.utils.token_limits import TokenLimits, ModelProvider
 from pywen.core.session_stats import session_stats
 
 class CodexAgent(BaseAgent):
@@ -15,14 +15,14 @@ class CodexAgent(BaseAgent):
             provider=config.model_config.provider.value,
             api_key=config.model_config.api_key,
             base_url=config.model_config.base_url,
-            model="gpt-5-codex",
+            model= config.model_config.model or "gpt-5-codex",
             wire_api="responses",
         )
         self.llm_client = LLMClient(self.llmconfig)
         session_stats.set_current_agent(self.type)
-        self.max_task_turns = self.llmconfig.retry
+        self.turn_cnt_max = self.llmconfig.turn_cnt_max
         self.max_iterations = config.max_iterations
-        self.current_turn_index = 0
+        self.turn_index = 0
         self.original_user_task = ""
         self.system_prompt = self._build_system_prompt()
         self.conversation_history: List[LLMMessage] = []
@@ -42,21 +42,19 @@ class CodexAgent(BaseAgent):
     async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
         model_name = self.llmconfig.model
         provider = self.llmconfig.provider
-        max_tokens = 200000
+        max_tokens = TokenLimits.get_limit(ModelProvider.OPENAI, model_name)
         if self.cli_console:
             self.cli_console.set_max_context_tokens(max_tokens)
         self.original_user_task = user_message
-        self.current_turn_index = 0
+        self.turn_index = 0
         session_stats.record_task_start(self.type)
         self.trajectory_recorder.start_recording(
             task=user_message, provider=provider, model=model_name, max_steps=self.max_iterations
         )
         self.conversation_history.append(LLMMessage(role="user", content=user_message))
 
-        while self.current_turn_index < self.max_task_turns:
-            self.current_turn_index += 1
-            if self.current_turn_index == 1:
-                yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_turn_index}}
+        yield {"type": "user_message", "data": {"message": user_message, "turn": self.turn_index}}
+        while self.turn_index < self.turn_cnt_max:
             messages = self._build_messages(
                 system_prompt=self.system_prompt,
                 history=self.conversation_history,
@@ -75,6 +73,7 @@ class CodexAgent(BaseAgent):
         return codex_md.read_text(encoding="utf-8")
 
     def _build_messages(self, system_prompt: str, history: List[LLMMessage]) -> List[Dict[str, Any]]:
+        #TODO 
         msgs: List[Dict[str, Any]] = []
         if system_prompt:
             msgs.append({"role": "system", "content": system_prompt})
@@ -112,11 +111,16 @@ class CodexAgent(BaseAgent):
                 yield {"type": "llm_chunk", "data": {"content": evt.data}}
     
             elif evt.type == "tool_call.ready":
-                tool_args = evt.data.get('args')
+                tool_args = {} 
                 if evt.data.get('kind') == "custom":
                     tool_args = {
                             "patch" : evt.data.get('args'),
                             }
+                elif evt.data.get('kind') == "function":
+                    try:
+                        tool_args = json.loads(evt.data.get('args'))
+                    except Exception as e:
+                        tool_args = {"input": evt.data.get('args')}
                 tc = ToolCall(
                         call_id = evt.data.get("call_id"), 
                         name = evt.data.get('name'), 
@@ -126,13 +130,19 @@ class CodexAgent(BaseAgent):
                 async for tool_event in self._process_one_tool_call(tc):
                     yield tool_event
 
+            elif evt.type == "reasoning_summary_text.delta":
+                payload = {"reasoning": evt.data, "turn": self.turn_index}
+                yield {"type": "waiting_for_user", "data": payload}
+
             elif evt.type == "completed":
-                yield {"type": "task_complete", "data": {"status": "completed"}}
-                return
+                self.turn_index += 1
+                if self.cli_console and evt.data:
+                    total_tokens = evt.data.usage.total_tokens
+                    self.cli_console.update_token_usage(total_tokens)
+                yield {"type": "turn_complete", "data": {"status": "completed"}}
 
             elif evt.type == "error":
                 yield {"type": "error", "data": {"error": str(evt.data)}}
-                return
 
     async def _process_one_tool_call(self, tool_call) -> AsyncGenerator[Dict[str, Any], None]:
         tool = self.tool_registry.get_tool(tool_call.name)

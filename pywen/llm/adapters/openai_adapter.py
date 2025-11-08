@@ -262,12 +262,7 @@ class OpenAIAdapter():
                 yield ResponseEvent.text_delta(event.delta)
 
             elif event.type == "response.reasoning_summary_text.delta":
-                # TODO.
-                yield ResponseEvent.text_delta(event.delta)
-
-            elif event.type == "response.reasoning_text.delta":
-                # TODO.
-                yield ResponseEvent.text_delta(event.delta)
+                yield ResponseEvent.reasoning_summary_text_delta(event.delta)
 
             elif event.type == "response.content_part.done" or \
                 event.type == "response.function_call_arguments.delta" or \
@@ -284,14 +279,8 @@ class OpenAIAdapter():
                     call_id = item.id 
                     yield ResponseEvent.web_search_begin(call_id)
 
-            elif event.type == "response.reasoning_summary_part.added":
-                yield ResponseEvent.reasoning_summary_part_added("")
-
-            elif event.type == "response.reasoning_summary_text.done":
-                yield ResponseEvent.reasoning_summary_text_done({})
-
             elif event.type == "response.completed":
-                yield ResponseEvent.completed({})
+                yield ResponseEvent.completed(event.response)
                 break
 
             elif event.type == "error":

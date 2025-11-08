@@ -21,7 +21,7 @@ class LLMConfig():
     base_url: Optional[str] = None
     model: str = "gpt-5-codex"
     timeout: float = 60.0
-    retry: int = 2
+    turn_cnt_max: int = 5
     wire_api: str = "auto"
     use_bearer_auth: bool = False  # 是否使用 Bearer token 认证（用于第三方 Anthropic 兼容服务）
 
@@ -55,15 +55,19 @@ class LLMClient:
             return cast(ProviderAdapter, impl)
         raise ValueError(f"Unknown provider: {cfg.provider}")
 
+    # 同步，非流式 
     def generate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse:
         return LLMResponse("")
 
+    # 同步，流式 
     def stream_response(self, messages: List[Dict[str, str]], **params) -> Generator[ResponseEvent, None, None]: 
         pass
 
+    # 异步，非流式
     async def agenerate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse:
         pass
 
+    # 异步，流式
     async def astream_response(self, messages: List[Dict[str, str]], **params) -> AsyncGenerator[ResponseEvent, None]: 
         # 让类型检查器开心
         stream = cast(AsyncGenerator[ResponseEvent, None], self._adapter.astream_response(messages, **params))

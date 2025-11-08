@@ -3,12 +3,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, Generic, TypeVar, Literal
 
 EventType = Literal[
-    "created",
+    "created", 
     "output_text.delta",
-    "reasoning_summary.delta",
-    "reasoning_content.delta",
-    "reasoning_summary_part.added",
-    "reasoning_summary_text.done",
     "output_item.done",
     "completed",
     "error",
@@ -23,6 +19,7 @@ EventType = Literal[
     "content_block_stop",
     "message_delta",
     "tool_call.delta_json",
+    "reasoning_summary_text.delta",
 ]
 
 T = TypeVar("T")
@@ -69,14 +66,6 @@ class ResponseEvent(Generic[T]):
         return ResponseEvent("web_search_begin", {"call_id": call_id})
 
     @staticmethod
-    def reasoning_summary_part_added(delta: str) -> ResponseEvent[str]:
-        return ResponseEvent("reasoning_summary_part.added", delta)
-
-    @staticmethod
-    def reasoning_summary_text_done(meta: Optional[Dict[str, Any]] = None) -> ResponseEvent:
-        return ResponseEvent("reasoning_summary_text.done", meta or {})
-
-    @staticmethod
     def message_start(meta: Dict[str, Any]) -> ResponseEvent[Dict[str, Any]]:
         return ResponseEvent("message_start", meta)
 
@@ -99,3 +88,6 @@ class ResponseEvent(Generic[T]):
     @staticmethod
     def tool_call_delta_json(partial_json: str) -> ResponseEvent[str]:
         return ResponseEvent("tool_call.delta_json", partial_json)
+    @staticmethod 
+    def reasoning_summary_text_delta(meta: Optional[Dict[str, Any]] = None) -> ResponseEvent:
+        return ResponseEvent("reasoning_summary_text.delta", meta or {})
