@@ -73,6 +73,11 @@ class ToolRegistry:
             'architect_tool': lambda config=None: self._import_and_create('pywen.agents.claudecode.tools.architect_tool', 'ArchitectTool', config),
             'todo_write': lambda config=None: self._import_and_create('pywen.agents.claudecode.tools.todo_tool', 'TodoTool', config),
             'think_tool': lambda config=None: self._import_and_create('pywen.agents.claudecode.tools.think_tool', 'ThinkTool', config),
+
+            # codex
+            'shell_tool': lambda config: self._import_and_create('pywen.tools.codex_shell_tool', 'CodexShellTool'),
+            'update_plan': lambda config: self._import_and_create('pywen.tools.update_plan_tool', 'UpdatePlanTool'),
+            'apply_patch': lambda config: self._import_and_create('pywen.tools.apply_patch_tool', 'ApplyPatchTool'),
         }
 
     def _import_and_create(self, module_name: str, class_name: str, *args):

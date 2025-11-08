@@ -1,7 +1,7 @@
 """CLI Console for displaying agent progress."""
 from __future__ import annotations
 
-from typing import Optional, Any, Dict 
+from typing import Optional, Any, Dict, Mapping
 from rich.console import Group
 from rich import get_console
 from rich.panel import Panel
@@ -455,15 +455,21 @@ class ApprovalService:
         self.pm = permission_manager
 
     async def confirm(self, tool_call, tool=None) -> bool:
-        name = tool_call.name if hasattr(tool_call, "name") else tool_call.get("name", "unknown")
-        args = tool_call.arguments if hasattr(tool_call, "arguments") else tool_call.get("arguments", {})
-        if self.pm and self.pm.should_auto_approve(name, **args):
-            return True
-
+        name = tool_call.name
+        raw_args = tool_call.arguments 
+        if isinstance(raw_args, Mapping):
+            args_map = dict(raw_args)
+        else:
+            args_map = {
+                    "__freeform": True,
+                    "__len": len(raw_args) if isinstance(raw_args, str) else None,
+                    "__type": type(raw_args).__name__,
+            }
+            if self.pm and self.pm.should_auto_approve(name, **args_map):
+                return True
         if tool:
             from pywen.tools.base import ToolRiskLevel
-            args = getattr(tool_call, 'arguments', None) or tool_call.get('arguments', {})
-            risk_level = tool.get_risk_level(**args)
+            risk_level = tool.get_risk_level(**args_map)
             if risk_level == ToolRiskLevel.SAFE:
                 return True
 
@@ -518,7 +524,7 @@ class ApprovalService:
 
     def _display_basic_tool_info(self, tool_name: str, arguments: dict):
         self.p.print_raw(f"🔧 [bold cyan]{tool_name}[/bold cyan]")
-        if arguments:
+        if arguments and isinstance(arguments, dict):
             self.p.print_raw("Arguments:")
             for key, value in arguments.items():
                 if key == "content" and len(str(value)) > 100:
@@ -526,6 +532,9 @@ class ApprovalService:
                     self.p.print_raw(f"  [cyan]{key}[/cyan]: {preview}")
                 else:
                     self.p.print_raw(f"  [cyan]{key}[/cyan]: {value}")
+        elif arguments and isinstance(arguments, str):
+            self.p.print_raw("Arguments:")
+            self.p.print_text(f"{arguments}")
         else:
             self.p.print_raw("No arguments")
 
@@ -540,7 +549,7 @@ class EventRouter:
         event_type = event.get("type")
         data = event.get("data", {})
 
-        if getattr(agent, "type", "") in ("QwenAgent", "ClaudeCodeAgent"):
+        if getattr(agent, "type", "") in ("QwenAgent", "ClaudeCodeAgent", "CodexAgent"):
             return self._handle_qwen_claude(event_type, data)
         elif getattr(agent, "type", "") == "GeminiResearchDemo":
             return self._handle_gemini(event_type, data)
