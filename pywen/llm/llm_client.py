@@ -16,13 +16,14 @@ class ProviderAdapter(Protocol):
 @dataclass
 class LLMConfig():
     # TODO.config重构完成这里需要采用config中的定义
-    provider: str = "compatible"    
+    provider: str = "compatible"
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     model: str = "gpt-5-codex"
     timeout: float = 60.0
     retry: int = 2
     wire_api: str = "auto"
+    use_bearer_auth: bool = False  # 是否使用 Bearer token 认证（用于第三方 Anthropic 兼容服务）
 
 class LLMClient:
     def __init__(self, cfg: Optional[LLMConfig] = None):
@@ -40,11 +41,16 @@ class LLMClient:
             )
             return cast(ProviderAdapter, impl)
         elif cfg.provider == "anthropic":
+            # 如果模型名不是 claude 开头，说明是第三方服务，使用 Bearer 认证
+            use_bearer = False
+            if not use_bearer and cfg.model and not cfg.model.lower().startswith("claude"):
+                use_bearer = True
+
             impl = AnthropicAdapter(
                 api_key=cfg.api_key,
                 base_url=cfg.base_url,
                 default_model=cfg.model,
-                wire_api=cfg.wire_api,
+                use_bearer_auth=use_bearer,
             )
             return cast(ProviderAdapter, impl)
         raise ValueError(f"Unknown provider: {cfg.provider}")

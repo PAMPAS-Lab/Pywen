@@ -35,7 +35,7 @@ class ClaudeCodeAgent(BaseAgent):
             api_key=config.model_config.api_key,
             base_url=config.model_config.base_url,
             model=config.model_config.model or "qwen-plus",
-            wire_api="native",
+            wire_api="auto",
         )
         self.llm_client = LLMClient(self.llmconfig)
         self.prompts = ClaudeCodePrompts()
