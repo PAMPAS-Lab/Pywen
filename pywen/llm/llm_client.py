@@ -3,6 +3,7 @@ import asyncio, time
 from typing import Generator,AsyncGenerator,Dict, cast, List, Optional, Protocol,Any
 from dataclasses import dataclass
 from .adapters.openai_adapter import OpenAIAdapter
+from .adapters.anthropic_adapter import AnthropicAdapter
 from .adapters.adapter_common import ResponseEvent
 from pywen.utils.llm_basics import LLMMessage, LLMResponse
 
@@ -35,11 +36,17 @@ class LLMClient:
                 api_key=cfg.api_key,
                 base_url=cfg.base_url,
                 default_model=cfg.model,
-                wire_api =cfg.wire_api,
+                wire_api=cfg.wire_api,
             )
             return cast(ProviderAdapter, impl)
-        # elif cfg.provider == "anthropic":
-        #     return AnthropicAdapter(cfg)
+        elif cfg.provider == "anthropic":
+            impl = AnthropicAdapter(
+                api_key=cfg.api_key,
+                base_url=cfg.base_url,
+                default_model=cfg.model,
+                wire_api=cfg.wire_api,
+            )
+            return cast(ProviderAdapter, impl)
         raise ValueError(f"Unknown provider: {cfg.provider}")
 
     def generate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse:

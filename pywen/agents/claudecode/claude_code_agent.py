@@ -6,7 +6,8 @@ from typing import Dict, List, Optional, AsyncGenerator, Any
 import datetime
 from pywen.agents.base_agent import BaseAgent
 from pywen.tools.base import BaseTool
-from pywen.utils.llm_basics import LLMMessage, LLMResponse
+from pywen.llm.llm_client import LLMClient, LLMConfig, LLMMessage
+from pywen.utils.llm_basics import LLMResponse
 from pywen.utils.tool_basics import ToolCall, ToolResult
 from pywen.core.trajectory_recorder import TrajectoryRecorder
 from .prompts import ClaudeCodePrompts
@@ -29,8 +30,14 @@ class ClaudeCodeAgent(BaseAgent):
         super().__init__(config, hook_mgr, cli_console)
         self.type = "ClaudeCodeAgent"
 
-        from pywen.utils.llm_client import LLMClient as UtilsLLMClient
-        self.llm_client = UtilsLLMClient.create(config.model_config)
+        self.llmconfig = LLMConfig(
+            provider=config.model_config.provider.value,
+            api_key=config.model_config.api_key,
+            base_url=config.model_config.base_url,
+            model=config.model_config.model or "qwen-plus",
+            wire_api="native",
+        )
+        self.llm_client = LLMClient(self.llmconfig)
         self.prompts = ClaudeCodePrompts()
         self.project_path = os.getcwd()
         self.max_iterations = getattr(config, 'max_iterations', 10)
@@ -48,9 +55,13 @@ class ClaudeCodeAgent(BaseAgent):
 
         self._setup_claude_code_tools()
         self._apply_claude_code_adapters()
+
+        # Convert tools to Anthropic native format
+        self.tools_formatted = self.tools_format_convert()
+
         session_stats.set_current_agent(self.type)
         self.quota_checked = False
-        
+
         self.todo_items = []
         reset_reminder_session()
         self.file_metrics = {}
@@ -79,6 +90,46 @@ class ClaudeCodeAgent(BaseAgent):
 
         # Replace tools with adapted versions
         self.tools = adapted_tools
+
+    def tools_format_convert(self) -> List[Dict[str, Any]]:
+        """Convert tools to Anthropic native format."""
+        tool_list = []
+        for t in self.tools:
+            func_decl = t.get_function_declaration()
+            # Convert to Anthropic format: name, description, input_schema
+            tool_dict = {
+                "name": func_decl["name"],
+                "description": func_decl["description"],
+                "input_schema": func_decl["parameters"]
+            }
+            tool_list.append(tool_dict)
+        return tool_list
+
+    def _build_messages(self, messages: List[LLMMessage]) -> List[Dict[str, Any]]:
+        """Build messages in the format expected by responses API."""
+        msgs: List[Dict[str, Any]] = []
+        for m in messages:
+            one: Dict[str, Any] = {"role": m.role}
+            if m.content is not None:
+                one["content"] = m.content
+            if hasattr(m, 'tool_call_id') and m.tool_call_id:
+                one["tool_call_id"] = m.tool_call_id
+            if hasattr(m, 'tool_calls') and m.tool_calls:
+                one["tool_calls"] = []
+                for tc in m.tool_calls:
+                    payload: Dict[str, Any] = {
+                        "call_id": getattr(tc, "call_id", None),
+                        "name": getattr(tc, "name", None),
+                    }
+                    args = getattr(tc, "arguments", None)
+                    if args is not None:
+                        payload["arguments"] = args
+                    inp = getattr(tc, "input", None)
+                    if inp is not None:
+                        payload["input"] = inp
+                    one["tool_calls"].append(payload)
+            msgs.append(one)
+        return msgs
 
     def get_enabled_tools(self) -> List[str]:
         """Return list of enabled tool names for Claude Code Agent."""
@@ -153,15 +204,15 @@ class ClaudeCodeAgent(BaseAgent):
 
             yield {"type": "user_message", "data": {"message": user_message}}
 
-            # 1. Quota check (only on first run)
-            if not self.quota_checked:
-                quota_ok = await self._check_quota()
-                self.quota_checked = True
-                if not quota_ok:
-                    yield {
-                        "type": "error",
-                        "data": {"error": "API quota check failed"}
-                    }
+            # # 1. Quota check (only on first run)
+            # if not self.quota_checked:
+            #     quota_ok = await self._check_quota()
+            #     self.quota_checked = True
+            #     if not quota_ok:
+            #         yield {
+            #             "type": "error",
+            #             "data": {"error": "API quota check failed"}
+            #         }
 
             # 2. Topic detection for each user input
             topic_info = await self._detect_new_topic(user_message)
@@ -210,62 +261,41 @@ class ClaudeCodeAgent(BaseAgent):
         Following official Claude Code quota check flow
         """
         try:
-            # Import GenerateContentConfig
-            from pywen.utils.llm_config import GenerateContentConfig
-            
             # Send simple quota check message
-            quota_messages = [LLMMessage(role="user", content="quota")]
+            quota_messages = [{"role": "user", "content": "quota"}]
 
-            # Create config based on original config from pywen_config.json,
-            # but override max_output_tokens to 1 for quota check
-            # Note: Exclude top_k as Qwen API doesn't support it
-            quota_config = GenerateContentConfig(
-                temperature=self.config.model_config.temperature,
-                max_output_tokens=1,  # Only change this to minimize usage
-                top_p=self.config.model_config.top_p
-            )
+            # Use astream_response with Anthropic native API
+            params = {"model": self.llmconfig.model}
+            content = ""
 
-            # Use the LLM client for quota check (config parameter not available in abstract interface)
-            response_result = await self.llm_client.generate_response(
-                messages=quota_messages,
-                tools=None,  # No tools for quota check
-                stream=False,  # Use non-streaming for quota check
-                config=quota_config  # Use config with max_output_tokens=1
-            )
-
-            # Handle non-streaming response
-            if isinstance(response_result, LLMResponse):
-                # Non-streaming response
-                final_response = response_result
-                content = response_result.content or ""
-            else:
-                # Streaming response (fallback)
-                content = ""
-                final_response = None
-                async for response in response_result:
-                    final_response = response
-                    if response.content:
-                        content += response.content
+            async for evt in self.llm_client.astream_response(quota_messages, **params):
+                if evt.type == "output_text.delta":
+                    content += evt.data
+                elif evt.type == "completed":
+                    break
+                elif evt.type == "error":
+                    if self.cli_console:
+                        self.cli_console.print(f"Quota check error: {evt.data}", "yellow")
+                    return False
 
             # Record quota check interaction in trajectory
-            if final_response:
-                quota_llm_response = LLMResponse(
-                    content=content,
-                    model=self.config.model_config.model,
-                    finish_reason="stop",
-                    usage=final_response.usage if hasattr(final_response, 'usage') else None,
-                    tool_calls=[]
-                )
+            quota_llm_response = LLMResponse(
+                content=content,
+                model=self.llmconfig.model,
+                finish_reason="stop",
+                usage=None,
+                tool_calls=[]
+            )
 
-                self.trajectory_recorder.record_llm_interaction(
-                    messages=quota_messages,
-                    response=quota_llm_response,
-                    provider=self.config.model_config.provider.value,
-                    model=self.config.model_config.model,
-                    tools=None,
-                    current_task="quota_check",
-                    agent_name="ClaudeCodeAgent"
-                )
+            self.trajectory_recorder.record_llm_interaction(
+                messages=[LLMMessage(role="user", content="quota")],
+                response=quota_llm_response,
+                provider=self.llmconfig.provider,
+                model=self.llmconfig.model,
+                tools=None,
+                current_task="quota_check",
+                agent_name="ClaudeCodeAgent"
+            )
 
             return bool(content)  # Return True if we got any content
         except Exception as e:
@@ -281,49 +311,45 @@ class ClaudeCodeAgent(BaseAgent):
         try:
             # Build topic detection messages
             topic_messages = [
-                LLMMessage(role="system", content=self.prompts.get_check_new_topic_prompt()),
-                LLMMessage(role="user", content=user_input)
+                {"role": "system", "content": self.prompts.get_check_new_topic_prompt()},
+                {"role": "user", "content": user_input}
             ]
 
-            response_result = await self.llm_client.generate_response(
-                messages=topic_messages,
-                tools=None,  # No tools for topic detection
-                stream=False  # Use non-streaming for topic detection
-            )
+            # Use astream_response with Anthropic native API
+            params = {"model": self.llmconfig.model}
+            content = ""
 
-            # Handle non-streaming response
-            if isinstance(response_result, LLMResponse):
-                # Non-streaming response
-                final_response = response_result
-                content = response_result.content or ""
-            else:
-                # Streaming response (fallback)
-                content = ""
-                final_response = None
-                async for response in response_result:
-                    final_response = response
-                    if response.content:
-                        content += response.content
+            async for evt in self.llm_client.astream_response(topic_messages, **params):
+                if evt.type == "output_text.delta":
+                    content += evt.data
+                elif evt.type == "completed":
+                    break
+                elif evt.type == "error":
+                    if self.cli_console:
+                        self.cli_console.print(f"Topic detection error: {evt.data}", "yellow")
+                    return None
 
             # Record topic detection interaction in trajectory
-            if final_response:
-                topic_llm_response = LLMResponse(
-                    content=content,
-                    model=self.config.model_config.model,
-                    finish_reason="stop",
-                    usage=final_response.usage if hasattr(final_response, 'usage') else None,
-                    tool_calls=[]
-                )
+            topic_llm_response = LLMResponse(
+                content=content,
+                model=self.llmconfig.model,
+                finish_reason="stop",
+                usage=None,
+                tool_calls=[]
+            )
 
-                self.trajectory_recorder.record_llm_interaction(
-                    messages=topic_messages,
-                    response=topic_llm_response,
-                    provider=self.config.model_config.provider.value,
-                    model=self.config.model_config.model,
-                    tools=None,
-                    current_task="topic_detection",
-                    agent_name="ClaudeCodeAgent"
-                )
+            self.trajectory_recorder.record_llm_interaction(
+                messages=[
+                    LLMMessage(role="system", content=self.prompts.get_check_new_topic_prompt()),
+                    LLMMessage(role="user", content=user_input)
+                ],
+                response=topic_llm_response,
+                provider=self.llmconfig.provider,
+                model=self.llmconfig.model,
+                tools=None,
+                current_task="topic_detection",
+                agent_name="ClaudeCodeAgent"
+            )
 
             # Parse JSON response
             if content:
@@ -598,11 +624,16 @@ class ClaudeCodeAgent(BaseAgent):
                     "data": {"error": "Operation was cancelled"}
                 }
                 return
-            response_stream = await self.llm_client.generate_response(
-                messages=messages,
-                tools=self.tools,
-                stream=True
-            )
+
+            # Build messages in Anthropic native format
+            formatted_messages = self._build_messages(messages)
+
+            # Use astream_response with Anthropic native API
+            params = {
+                "model": self.llmconfig.model,
+                "tools": self.tools_formatted,
+                "max_tokens": 4096
+            }
 
             # Yield stream start event
             yield {
@@ -610,60 +641,102 @@ class ClaudeCodeAgent(BaseAgent):
                 "data": {"depth": depth}
             }
 
-            # 1. 流式处理响应，收集工具调用
-            final_response = None
-            previous_content = ""
+            # Process streaming response with Anthropic native events
+            assistant_content = ""
             collected_tool_calls = []
+            current_tool_call = None
+            tool_json_buffer = ""
 
-            async for response_chunk in response_stream:
-                final_response = response_chunk
+            async for evt in self.llm_client.astream_response(formatted_messages, **params):
+                if evt.type == "output_text.delta":
+                    # Send content delta
+                    yield {
+                        "type": "llm_chunk",
+                        "data": {"content": evt.data}
+                    }
+                    assistant_content += evt.data
 
-                # 发送内容增量
-                if response_chunk.content:
-                    current_content = response_chunk.content
-                    if current_content != previous_content:
-                        new_content = current_content[len(previous_content):]
-                        if new_content:
-                            yield {
-                                "type": "llm_chunk",
-                                "data": {"content": new_content}
-                            }
-                        previous_content = current_content
+                elif evt.type == "content_block_start":
+                    # Start of a new content block (could be text or tool_use)
+                    block_data = evt.data
+                    if block_data.get("block_type") == "tool_use":
+                        current_tool_call = {
+                            "call_id": block_data.get("call_id"),
+                            "name": block_data.get("name"),
+                        }
+                        tool_json_buffer = ""
 
-                # 收集工具调用（不立即执行）
-                if response_chunk.tool_calls:
-                    collected_tool_calls.extend(response_chunk.tool_calls)
+                elif evt.type == "tool_call.delta_json":
+                    # Accumulate tool call JSON
+                    if current_tool_call:
+                        tool_json_buffer += evt.data
 
-            # 2. 流结束后处理
-            if final_response:
-                assistant_msg = LLMMessage(
-                    role="assistant",
-                    content=final_response.content,
-                    tool_calls=final_response.tool_calls
-                )
+                elif evt.type == "content_block_stop":
+                    # End of content block - finalize tool call if any
+                    if current_tool_call:
+                        import json
+                        try:
+                            tool_args = json.loads(tool_json_buffer) if tool_json_buffer else {}
+                        except json.JSONDecodeError:
+                            tool_args = {}
 
-                # 简化的工具调用格式转换
-                tool_calls = []
-                if final_response.tool_calls:
-                    for tc in final_response.tool_calls:
-                        tool_calls.append({
-                            "id": tc.call_id,
-                            "name": tc.name,
-                            "arguments": tc.arguments
-                        })
+                        tc = ToolCall(
+                            call_id=current_tool_call["call_id"],
+                            name=current_tool_call["name"],
+                            arguments=tool_args,
+                            type="function",
+                        )
+                        collected_tool_calls.append(tc)
+                        current_tool_call = None
+                        tool_json_buffer = ""
 
-                # 返回最终的assistant_response事件，包含usage信息
-                yield {
-                    "type": "assistant_response",
-                    "assistant_message": assistant_msg,
-                    "tool_calls": tool_calls,
-                    "final_response": final_response  # 包含完整的响应对象，包括usage
-                }
+                elif evt.type == "completed":
+                    # Stream completed
+                    break
+
+                elif evt.type == "error":
+                    yield {
+                        "type": "error",
+                        "data": {"error": str(evt.data)}
+                    }
+                    return
+
+            # Build assistant message
+            assistant_msg = LLMMessage(
+                role="assistant",
+                content=assistant_content,
+                tool_calls=collected_tool_calls if collected_tool_calls else None
+            )
+
+            # Convert tool calls to expected format
+            tool_calls = []
+            if collected_tool_calls:
+                for tc in collected_tool_calls:
+                    tool_calls.append({
+                        "id": tc.call_id,
+                        "name": tc.name,
+                        "arguments": tc.arguments
+                    })
+
+            # Create a mock final_response for compatibility
+            final_response = type('obj', (object,), {
+                'usage': None,
+                'content': assistant_content,
+                'tool_calls': collected_tool_calls
+            })()
+
+            # Return final assistant_response event
+            yield {
+                "type": "assistant_response",
+                "assistant_message": assistant_msg,
+                "tool_calls": tool_calls,
+                "final_response": final_response
+            }
 
         except Exception as e:
             yield {
                 "type": "error",
-                "data": {"error": f"Streaming failed, falling back to non-streaming: {str(e)}"}
+                "data": {"error": f"Streaming failed: {str(e)}"}
             }
 
     async def _execute_tools(
@@ -672,7 +745,7 @@ class ClaudeCodeAgent(BaseAgent):
         **kwargs
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Simplified tool execution with smart concurrency
+        Simplified tool execution - always execute sequentially
         """
         if not tool_calls:
             yield {
@@ -681,39 +754,8 @@ class ClaudeCodeAgent(BaseAgent):
             }
             return
 
-        can_run_concurrently = all(self._is_tool_readonly(tc["name"]) for tc in tool_calls)
-
-        if can_run_concurrently and len(tool_calls) > 1:
-            yield {"type": "tool_execution", "strategy": "concurrent"}
-            tool_results = await self._execute_concurrent_tools(tool_calls, **kwargs)
-        else:
-            yield {"type": "tool_execution", "strategy": "serial"}
-            tool_results = []
-            async for result in self._execute_serial_tools(tool_calls, **kwargs):
-                if result["type"] in ["tool_start", "tool_result", "tool_error"]:
-                    yield result
-                elif result["type"] == "tool_completed":
-                    tool_results.append(result["llm_message"])
-        yield {
-            "type": "tool_results",
-            "results": tool_results
-        }
-
-    def _is_tool_readonly(self, tool_name: str) -> bool:
-        """Check if a tool is read-only (safe for concurrent execution)"""
-        readonly_tools = {
-            'read_file', 'read_many_files', 'ls', 'grep', 'glob',
-            'web_fetch', 'web_search', 'git_status', 'git_log'
-        }
-        return tool_name in readonly_tools
-
-    async def _execute_serial_tools(
-        self,
-        tool_calls: List[Dict[str, Any]],
-        **kwargs
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Execute tools one by one (simplified)"""
-        
+        # Execute tools sequentially
+        tool_results = []
         for tool_call in tool_calls:
             try:
                 # Yield tool start event
@@ -726,12 +768,12 @@ class ClaudeCodeAgent(BaseAgent):
                     }
                 }
 
-                # Execute single tool directly
+                # Execute single tool
                 tool_result, llm_message = await self._execute_single_tool_with_result(tool_call, **kwargs)
 
                 # Yield tool result for CLI display
                 yield {
-                    "type": "tool_result", 
+                    "type": "tool_result",
                     "data": {
                         "call_id": tool_call.get("id", "unknown"),
                         "name": tool_call["name"],
@@ -741,11 +783,8 @@ class ClaudeCodeAgent(BaseAgent):
                     }
                 }
 
-                # Yield completed tool for message history
-                yield {
-                    "type": "tool_completed",
-                    "llm_message": llm_message
-                }
+                # Add to results
+                tool_results.append(llm_message)
 
                 # Check for abort signal
                 if kwargs.get('abort_signal') and kwargs['abort_signal'].is_set():
@@ -769,10 +808,14 @@ class ClaudeCodeAgent(BaseAgent):
                     }
                 }
 
-                yield {
-                    "type": "tool_completed", 
-                    "llm_message": error_message
-                }
+                tool_results.append(error_message)
+
+        yield {
+            "type": "tool_results",
+            "results": tool_results
+        }
+
+
 
     async def _execute_single_tool_with_result(
         self,
@@ -920,68 +963,8 @@ class ClaudeCodeAgent(BaseAgent):
             )
             return error_result, error_message
 
-    async def _execute_concurrent_tools(
-        self,
-        tool_calls: List[Dict[str, Any]],
-        **kwargs
-    ) -> List[LLMMessage]:
-        """Execute multiple tools concurrently (for read-only tools)"""
-        import asyncio
 
-        # Create tasks for concurrent execution
-        tasks = []
-        for tool_call in tool_calls:
-            task = asyncio.create_task(
-                self._execute_single_tool(tool_call, **kwargs)
-            )
-            tasks.append(task)
 
-        # Wait for all tasks to complete
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Process results and maintain order
-        tool_results = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                # Handle exception
-                error_msg = f"Error executing tool '{tool_calls[i]['name']}': {str(result)}"
-                tool_results.append(LLMMessage(
-                    role="tool",
-                    content=f"Error: {error_msg}",
-                    tool_call_id=tool_calls[i].get("id", "unknown")
-                ))
-            else:
-                tool_results.append(result)
-
-        return tool_results
-
-    async def _execute_single_tool(
-        self,
-        tool_call: Dict[str, Any],
-        **kwargs
-    ) -> LLMMessage:
-        """
-        Execute a single tool and return only the LLMMessage
-        This is a convenience wrapper around _execute_single_tool_with_result
-        """
-        #pre 
-        _, llm_message = await self._execute_single_tool_with_result(tool_call, **kwargs)
-        #post
-        return llm_message
-
-    async def _execute_tool_directly(
-        self,
-        tool_call: Dict[str, Any],
-        **kwargs
-    ) -> ToolResult:
-        """
-        Execute a single tool and return only the ToolResult
-        This is a convenience wrapper around _execute_single_tool_with_result
-        """
-        tool_result, _ = await self._execute_single_tool_with_result(tool_call, **kwargs)
-        return tool_result
-
-    
     def _find_tool(self, tool_name: str) -> Optional[BaseTool]:
         """Find a tool by name"""
         return self.tool_registry.get_tool(tool_name)
