@@ -1,99 +1,201 @@
 from __future__ import annotations
-from typing import List, Dict, AsyncGenerator, Generator, Any
-from dataclasses import dataclass
+from typing import AsyncGenerator, Dict, Generator, List, Any, Optional
+from anthropic import Anthropic, AsyncAnthropic
+from pywen.utils.llm_basics import LLMResponse
+from .adapter_common import ResponseEvent
 
-@dataclass
-class AnthropicAdapter:
-    cfg: Any
-    def __post_init__(self):
-        import anthropic
-        self._client = anthropic.Anthropic(api_key=self.cfg.api_key)
-        self._aclient = anthropic.AsyncAnthropic(api_key=self.cfg.api_key)
+def _to_anthropic_messages(messages: List[Dict[str, str]]):
+    system = ""
+    content: List[Dict[str, str]] = []
+    for m in messages:
+        role = m.get("role", "user")
+        msg_content = m.get("content", "")
+        if role == "system":
+            system += (msg_content + "\n")
+        elif role == "user":
+            content.append({"role": "user", "content": msg_content})
+        elif role == "assistant":
+            content.append({"role": "assistant", "content": msg_content})
+        elif role == "tool":
+            if content and content[-1]["role"] == "user":
+                content[-1]["content"] += f"\n{msg_content}"
+            else:
+                content.append({"role": "user", "content": msg_content})
+    system = system.strip()
+    return system, content
 
-    def _to_anthropic(self, messages: List[Dict[str, str]]):
-        system = ""
-        content: List[Dict[str, str]] = []
-        for m in messages:
-            role = m["role"]
-            if role == "system":
-                system += (m["content"] + "\n")
-            elif role in ("user", "assistant"):
-                content.append({"role": role, "content": m["content"]})
-        system = system.strip()
-        return system, content
+class AnthropicAdapter():
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str],
+        base_url: Optional[str],
+        default_model: str,
+    ):
+        api_key = api_key or "sk-NNEWnOwsIbYjoDVdcd7PzLV8p8aGZGqQZCa52iTOAJSeOjx9"
+        base_url = base_url or "https://api.moonshot.cn/anthropic"
+        self._sync = Anthropic(
+            api_key=api_key,
+            base_url=base_url,
+            default_headers={"Authorization": api_key}
+        )
+        self._async = AsyncAnthropic(
+            api_key=api_key,
+            base_url=base_url,
+            default_headers={"Authorization": api_key}
+        )
+        self._default_model = default_model
 
-    def chat(self, messages: List[Dict[str, str]], **params) -> str:
-        system, msg = self._to_anthropic(messages)
+    def generate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse:
+        model = params.get("model", self._default_model)
+        return self._messages_nonstream_sync(messages, model, params)
+
+    async def agenerate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse:
+        model = params.get("model", self._default_model)
+        return await self._messages_nonstream_async(messages, model, params)
+
+    def stream_respons(self, messages: List[Dict[str, str]], **params) -> Generator[ResponseEvent, None, None]:
+        model = params.get("model", self._default_model)
+        for evt in self._messages_stream_responses_sync(messages, model, params):
+            yield evt
+
+    async def astream_response(self, messages: List[Dict[str, Any]], **params) -> AsyncGenerator[ResponseEvent, None]:
+        model = params.get("model", self._default_model)
+        async for evt in self._messages_stream_responses_async(messages, model, params):
+            yield evt
+
+    def _messages_nonstream_sync(self, messages, model, params) -> LLMResponse:
+        system, msg = _to_anthropic_messages(messages)
         kwargs = {
-            "model": params.get("model", "claude-3-5-sonnet-20241022"),
-            "max_tokens": params.get("max_tokens", 1024),
-            "messages": msg
+            "model": model,
+            "max_tokens": params.get("max_tokens", 4096),
+            "messages": msg,
+            **{k: v for k, v in params.items() if k not in ("model", "max_tokens")}
+        }
+        if system:
+            kwargs["system"] = system
+        resp = self._sync.messages.create(**kwargs)
+        text = resp.content[0].text if resp.content else ""
+        return LLMResponse(text)
+
+    async def _messages_nonstream_async(self, messages, model, params) -> LLMResponse:
+        system, msg = _to_anthropic_messages(messages)
+        kwargs = {
+            "model": model,
+            "max_tokens": params.get("max_tokens", 4096),
+            "messages": msg,
+            **{k: v for k, v in params.items() if k not in ("model", "max_tokens")}
+        }
+        if system:
+            kwargs["system"] = system
+        resp = await self._async.messages.create(**kwargs)
+        text = resp.content[0].text if resp.content else ""
+        return LLMResponse(text)
+
+    def _messages_stream_responses_sync(self, messages, model, params) -> Generator[ResponseEvent, None, None]:
+        system, msg = _to_anthropic_messages(messages)
+        kwargs = {
+            "model": model,
+            "max_tokens": params.get("max_tokens", 4096),
+            "messages": msg,
+            **{k: v for k, v in params.items() if k not in ("model", "max_tokens")}
         }
         if system:
             kwargs["system"] = system
 
-        resp = self._client.messages.create(**kwargs)
-        out = []
-        for blk in getattr(resp, "content", []) or []:
-            if getattr(blk, "type", None) == "text":
-                out.append(getattr(blk, "text", ""))
-        return "".join(out)
-
-    async def achat(self, messages: List[Dict[str, str]], **params) -> str:
-        system, msg = self._to_anthropic(messages)
-        kwargs = {
-            "model": params.get("model", "claude-3-5-sonnet-20241022"),
-            "max_tokens": params.get("max_tokens", 1024),
-            "messages": msg
-        }
-        if system:
-            kwargs["system"] = system
-
-        resp = await self._aclient.messages.create(**kwargs)
-        out = []
-        for blk in getattr(resp, "content", []) or []:
-            if getattr(blk, "type", None) == "text":
-                out.append(getattr(blk, "text", ""))
-        return "".join(out)
-
-    def stream(self, messages: List[Dict[str, str]], **params) -> Generator[str, None, None]:
-        system, msg = self._to_anthropic(messages)
-        kwargs = {
-            "model": params.get("model", "claude-3-5-sonnet-20241022"),
-            "max_tokens": params.get("max_tokens", 1024),
-            "messages": msg
-        }
-        if system:
-            kwargs["system"] = system
-
-        with self._client.messages.stream(**kwargs) as stream:
+        with self._sync.messages.stream(**kwargs) as stream:
             for event in stream:
-                if event.type == "content_block_delta":
+                if event.type == "message_start":
+                    message_id = getattr(event.message, "id", "")
+                    yield ResponseEvent.message_start({"message_id": message_id})
+
+                elif event.type == "content_block_start":
+                    block = getattr(event, "content_block", None)
+                    if block:
+                        block_type = getattr(block, "type", None)
+                        if block_type == "tool_use":
+                            call_id = getattr(block, "id", "")
+                            name = getattr(block, "name", "")
+                            yield ResponseEvent.content_block_start({"call_id": call_id, "name": name, "block_type": block_type})
+                        else:
+                            yield ResponseEvent.content_block_start({"block_type": block_type})
+
+                elif event.type == "content_block_delta":
                     delta = event.delta
-                    if getattr(delta, "type", None) == "text_delta":
-                        txt = getattr(delta, "text", "")
-                        if txt:
-                            yield txt
+                    delta_type = getattr(delta, "type", None)
+                    if delta_type == "text_delta":
+                        text = getattr(delta, "text", "")
+                        if text:
+                            yield ResponseEvent.text_delta(text)
+                    elif delta_type == "input_json_delta":
+                        partial_json = getattr(delta, "partial_json", "")
+                        if partial_json:
+                            yield ResponseEvent.tool_call_delta_json(partial_json)
+
+                elif event.type == "content_block_stop":
+                    yield ResponseEvent.content_block_stop({})
+
+                elif event.type == "message_delta":
+                    delta = getattr(event, "delta", None)
+                    if delta:
+                        stop_reason = getattr(delta, "stop_reason", None)
+                        if stop_reason:
+                            yield ResponseEvent.message_delta({"stop_reason": stop_reason})
+
                 elif event.type == "message_stop":
+                    yield ResponseEvent.completed({})
                     break
 
-    async def astream(self, messages: List[Dict[str, str]], **params) -> AsyncGenerator[str, None]:
-        system, msg = self._to_anthropic(messages)
+    async def _messages_stream_responses_async(self, messages, model, params) -> AsyncGenerator[ResponseEvent, None]:
+        system, msg = _to_anthropic_messages(messages)
         kwargs = {
-            "model": params.get("model", "claude-3-5-sonnet-20241022"),
-            "max_tokens": params.get("max_tokens", 1024),
-            "messages": msg
+            "model": model,
+            "max_tokens": params.get("max_tokens", 4096),
+            "messages": msg,
+            **{k: v for k, v in params.items() if k not in ("model", "max_tokens")}
         }
         if system:
             kwargs["system"] = system
 
-        async with self._aclient.messages.stream(**kwargs) as stream:
+        async with self._async.messages.stream(**kwargs) as stream:
             async for event in stream:
-                if event.type == "content_block_delta":
+                if event.type == "message_start":
+                    message_id = getattr(event.message, "id", "")
+                    yield ResponseEvent.message_start({"message_id": message_id})
+
+                elif event.type == "content_block_start":
+                    block = getattr(event, "content_block", None)
+                    if block:
+                        block_type = getattr(block, "type", None)
+                        if block_type == "tool_use":
+                            call_id = getattr(block, "id", "")
+                            name = getattr(block, "name", "")
+                            yield ResponseEvent.content_block_start({"call_id": call_id, "name": name, "block_type": block_type})
+                        else:
+                            yield ResponseEvent.content_block_start({"block_type": block_type})
+
+                elif event.type == "content_block_delta":
                     delta = event.delta
-                    if getattr(delta, "type", None) == "text_delta":
-                        txt = getattr(delta, "text", "")
-                        if txt:
-                            yield txt
+                    delta_type = getattr(delta, "type", None)
+                    if delta_type == "text_delta":
+                        text = getattr(delta, "text", "")
+                        if text:
+                            yield ResponseEvent.text_delta(text)
+                    elif delta_type == "input_json_delta":
+                        partial_json = getattr(delta, "partial_json", "")
+                        if partial_json:
+                            yield ResponseEvent.tool_call_delta_json(partial_json)
+
+                elif event.type == "content_block_stop":
+                    yield ResponseEvent.content_block_stop({})
+
+                elif event.type == "message_delta":
+                    delta = getattr(event, "delta", None)
+                    if delta:
+                        stop_reason = getattr(delta, "stop_reason", None)
+                        if stop_reason:
+                            yield ResponseEvent.message_delta({"stop_reason": stop_reason})
+
                 elif event.type == "message_stop":
+                    yield ResponseEvent.completed({})
                     break
