@@ -646,6 +646,7 @@ class ClaudeCodeAgent(BaseAgent):
             collected_tool_calls = []
             current_tool_call = None
             tool_json_buffer = ""
+            usage_data = None
 
             async for evt in self.llm_client.astream_response(formatted_messages, **params):
                 if evt.type == "output_text.delta":
@@ -690,6 +691,11 @@ class ClaudeCodeAgent(BaseAgent):
                         current_tool_call = None
                         tool_json_buffer = ""
 
+                elif evt.type == "message_delta":
+                    # Extract usage information from message_delta event
+                    if evt.data and "usage" in evt.data:
+                        usage_data = evt.data["usage"]
+
                 elif evt.type == "completed":
                     # Stream completed
                     break
@@ -719,8 +725,20 @@ class ClaudeCodeAgent(BaseAgent):
                     })
 
             # Create a mock final_response for compatibility
+            usage_obj = None
+            if usage_data:
+                input_tokens = usage_data.get('input_tokens', 0)
+                output_tokens = usage_data.get('output_tokens', 0)
+
+                usage_attrs = {
+                    'input_tokens': input_tokens,
+                    'output_tokens': output_tokens,
+                    'total_tokens': input_tokens + output_tokens
+                }
+                usage_obj = type('obj', (object,), usage_attrs)()
+
             final_response = type('obj', (object,), {
-                'usage': None,
+                'usage': usage_obj,
                 'content': assistant_content,
                 'tool_calls': collected_tool_calls
             })()

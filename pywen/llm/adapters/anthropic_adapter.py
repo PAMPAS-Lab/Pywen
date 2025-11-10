@@ -156,10 +156,24 @@ class AnthropicAdapter():
 
         elif event.type == "message_delta":
             delta = getattr(event, "delta", None)
+            usage = getattr(event, "usage", None)
+
+            data = {}
             if delta:
                 stop_reason = getattr(delta, "stop_reason", None)
                 if stop_reason:
-                    return ResponseEvent.message_delta({"stop_reason": stop_reason})
+                    data["stop_reason"] = stop_reason
+            if usage:
+                # usage 包含最终的 token 统计
+                # 提取所有可能的字段（Anthropic 原生 + 第三方兼容服务可能返回的字段）
+                usage_dict = {
+                    "input_tokens": getattr(usage, "input_tokens", 0),
+                    "output_tokens": getattr(usage, "output_tokens", 0)
+                }
+
+                data["usage"] = usage_dict
+            if data:
+                return ResponseEvent.message_delta(data)
 
         elif event.type == "message_stop":
             return ResponseEvent.completed({})
