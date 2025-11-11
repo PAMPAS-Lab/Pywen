@@ -19,6 +19,7 @@ EventType = Literal[
     "content_block_stop",
     "message_delta",
     "tool_call.delta_json",
+    "reasoning_text.delta",
     "reasoning_summary_text.delta",
 ]
 
@@ -88,6 +89,11 @@ class ResponseEvent(Generic[T]):
     @staticmethod
     def tool_call_delta_json(partial_json: str) -> ResponseEvent[str]:
         return ResponseEvent("tool_call.delta_json", partial_json)
+
+    @staticmethod
+    def reasoning_delta(delta: str) -> ResponseEvent[str]:
+        return ResponseEvent("reasoning_text.delta", delta)
+
     @staticmethod 
     def reasoning_summary_text_delta(meta: Optional[Dict[str, Any]] = None) -> ResponseEvent:
         return ResponseEvent("reasoning_summary_text.delta", meta or {})

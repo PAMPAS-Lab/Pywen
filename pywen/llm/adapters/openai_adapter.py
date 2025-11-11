@@ -4,7 +4,7 @@ from typing import AsyncGenerator, Dict, Generator, Iterator, List, Any, Optiona
 from openai import OpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.responses import ResponseInputParam
-from pywen.utils.llm_basics import LLMMessage, LLMResponse
+from pywen.utils.llm_basics import LLMResponse
 from .adapter_common import ResponseEvent
 
 def _as_output_text_items(text: str) -> List[Dict[str, str]]:
@@ -256,9 +256,12 @@ class OpenAIAdapter():
                     kind = "custom"
                     yield ResponseEvent.tool_call_ready(call_id, name, args, kind)
                 else:
-                    yield ResponseEvent.output_item_done({"item_id": event.item})
+                    continue
 
             elif event.type == "response.output_text.delta":
+                yield ResponseEvent.text_delta(event.delta)
+
+            elif event.type == "response.reasoning_text.delta":
                 yield ResponseEvent.text_delta(event.delta)
 
             elif event.type == "response.reasoning_summary_text.delta":

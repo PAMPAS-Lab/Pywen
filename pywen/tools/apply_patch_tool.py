@@ -1,9 +1,9 @@
 from __future__ import annotations
 import os
-import uuid,json
+import json
 from dataclasses import dataclass 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, override
+from typing import Any, Dict, List, Optional, Tuple, override,Mapping
 from pywen.tools.base import BaseTool, ToolRiskLevel
 from pywen.utils.tool_basics import ToolResult
 
@@ -478,7 +478,7 @@ eof_line: "*** End of File" LF
                     summary="apply_patch crashed",
             )
 
-    def build(self) -> Dict[str, Any]:
+    def build(self) -> Mapping[str, Any]:
         return {
                 "type" : "custom",
                 "name" : self.name,

@@ -1,7 +1,7 @@
 """Enhanced base tool classes matching TypeScript version."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional,Mapping
 from enum import Enum
 from pywen.utils.tool_basics import ToolCallConfirmationDetails, ToolResult
 
@@ -89,6 +89,10 @@ class BaseTool(ABC):
             "description": self.description,
             "parameters": self.parameter_schema
         }
+
+    def build(self) -> Mapping[str, Any]:
+        """Build tool instance. To be implemented by subclasses."""
+        raise NotImplementedError("Subclasses must implement build method.")
 
 
 # Alias for backward compatibility

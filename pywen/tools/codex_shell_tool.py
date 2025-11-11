@@ -1,7 +1,7 @@
 import asyncio
 import os
 import shlex
-from typing import Any, Dict, List, Optional, override
+from typing import Any, Dict, List, Optional, override,Mapping
 from .base import BaseTool, ToolResult, ToolRiskLevel
 
 def _assert_command_list(command: Any) -> List[str]:
@@ -152,7 +152,7 @@ class CodexShellTool(BaseTool):
         except Exception as e:
             return ToolResult(call_id="", error=f"Shell execution error: {e}")
 
-    def build(self) -> Dict[str, Any]:
+    def build(self) -> Mapping[str, Any]:
         print(type(self.parameter_schema))
         return {
             "type": "function",

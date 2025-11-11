@@ -254,3 +254,12 @@ class TrajectoryRecorder:
             return task[-1] if task else None
         return task
 
+    def record_input(self, input_data: Dict[str, Any]):
+        """Record input data for the trajectory."""
+        self.trajectory_data["llm_interactions"].append(input_data)
+        self.save_trajectory()
+
+    def record_response(self, response_data: Dict[str, Any]):
+        """Record response data for the trajectory."""
+        self.trajectory_data["llm_interactions"].append(response_data)
+        self.save_trajectory()
