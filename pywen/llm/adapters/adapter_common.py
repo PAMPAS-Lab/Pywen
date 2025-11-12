@@ -43,8 +43,8 @@ class ResponseEvent(Generic[T]):
         return ResponseEvent("output_text.delta", delta)
 
     @staticmethod
-    def completed(meta: Optional[Dict[str, Any]] = None) -> ResponseEvent:
-        return ResponseEvent("completed", meta or {})
+    def completed(resp: Any = None) -> ResponseEvent:
+        return ResponseEvent("completed", resp)
 
     @staticmethod
     def error(message: str, extra: Optional[Dict[str, Any]] = None) -> ResponseEvent[Dict[str, Any]]:

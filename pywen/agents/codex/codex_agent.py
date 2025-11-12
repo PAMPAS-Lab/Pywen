@@ -1,6 +1,6 @@
 import json,os
 from pathlib import Path
-from typing import Dict, List, Mapping, Literal, Any, AsyncGenerator
+from typing import Dict, List, Mapping, Literal, Any, AsyncGenerator,Optional
 from pydantic import BaseModel
 from pywen.agents.base_agent import BaseAgent
 from pywen.llm.llm_client import LLMClient, LLMConfig 
@@ -61,11 +61,13 @@ class CodexAgent(BaseAgent):
         self.turn_index = 0
         self.history: History = History(system_prompt= self._build_system_prompt())
         self.tools = self.tools_format_convert()
+        self.current_task = None
+
 
     def get_enabled_tools(self) -> List[str]:
         return ['shell_tool', 'update_plan', 'apply_patch',]
 
-    def tools_format_convert(self) -> List[Dict[str, Any]]:
+    def tools_format_convert(self) -> list:
         tool_list = []
         tools = self.tool_registry.list_tools()
         for t in tools:
@@ -106,12 +108,19 @@ class CodexAgent(BaseAgent):
         self.history.add_message(role="user", content=user_message)
         env_msg = self.build_environment_context(cwd=os.getcwd(),shell=os.environ.get("SHELL", "bash"))
         self.history.add_item(env_msg)
+
         while self.turn_index < self.turn_cnt_max:
             messages = self.history.to_responses_input()
-            for msg in messages:
-                self.trajectory_recorder.record_input(msg)
             params = {"model": model_name, "api":"responses", "tools" : self.tools}
+
+            self.current_task = None
+            for m in reversed(messages):
+                if m.get("role") == "user":
+                    self.current_task = m.get("content")
+                    break
+
             stage = self._responses_event_process(messages= messages, params=params)
+
             async for ev in stage:
                 yield ev
 
@@ -123,15 +132,72 @@ class CodexAgent(BaseAgent):
             raise FileNotFoundError(f"Missing system prompt file '{codex_md}'")
         return codex_md.read_text(encoding="utf-8")
 
+    def record_turn_messages(self, messages: List[Dict[str, Any]], responses) -> None:
+        """记录每轮的消息到轨迹记录器"""
+        #1. 转换messages格式, pydantic -> dict
+        from pywen.utils.llm_basics import LLMMessage
+        converted_messages = []
+        llm_msg = None
+        for msg in messages:
+            if isinstance(msg, BaseModel):
+                if msg.type == "function_call" or msg.type == "custom_tool_call":
+                    tool_call = ToolCall(
+                        call_id = msg.call_id,
+                        name = msg.name,
+                        arguments = json.loads(msg.arguments) if msg.type == "function_call" else msg.input,
+                        type = msg.type,
+                    )
+                data = msg.model_dump(exclude_none=True)
+                llm_msg = LLMMessage(
+                        role = data.get("role", ""),
+                        content = data.get("content"),
+                        tool_calls = [tool_call],
+                        tool_call_id = data.get("tool_call_id"),
+                        )
+            elif isinstance(msg, dict):
+                llm_msg = LLMMessage(
+                        role = msg.get("role", msg.get("type")),
+                        content = msg.get("content", msg.get("name")),
+                        tool_calls = None,
+                        tool_call_id = None,
+                        )
+            converted_messages.append(llm_msg)
+
+        #2. 转换responses格式
+        if isinstance(responses, BaseModel):
+            from pywen.utils.llm_basics import LLMResponse
+            tool_calls = []
+            for out in responses.output:
+                if out.type == "function_call" or out.type == "custom_tool_call":
+                    tool_call = ToolCall(
+                        call_id = out.call_id,
+                        name = out.name,
+                        arguments = json.loads(out.arguments) if out.type == "function_call" else out.input,
+                        type = out.type,
+                    )
+                    tool_calls.append(tool_call)
+ 
+            resp = LLMResponse(
+                    content = responses.output_text,
+                    tool_calls = tool_calls,
+                    usage = responses.usage,
+                    model = self.llmconfig.model,
+                    finish_reason = "completed",
+                    )
+
+        self.trajectory_recorder.record_llm_interaction(
+                messages = converted_messages,
+                response = resp,
+                provider = self.llmconfig.provider,
+                model = self.llmconfig.model,
+                tools = self.tools,
+                current_task = self.current_task,
+                agent_name = self.type,
+        )
+
     async def _responses_event_process(self, messages, params) -> AsyncGenerator[Dict[str, Any], None]:
         """在这里处理LLM的事件，转换为agent事件流"""
-
         async for evt in self.llm_client.astream_response(messages, **params):
-            for d in evt.data if isinstance(evt.data, list) else [evt.data]:
-                if isinstance(d, dict):
-                    self.trajectory_recorder.record_response(d)
-                elif isinstance(d, BaseModel):
-                    self.trajectory_recorder.record_response(d.model_dump(exclude_none=True))
             if evt.type == "created":
                 yield {"type": "llm_stream_start", "data": {"message": "LLM response stream started"}}
 
@@ -161,6 +227,7 @@ class CodexAgent(BaseAgent):
 
             elif evt.type == "completed":
                 #一轮结束
+                self.record_turn_messages(messages, evt.data)
                 self.turn_index += 1
                 if evt.data and self.cli_console:
                     total_tokens = evt.data.usage.total_tokens
@@ -176,8 +243,10 @@ class CodexAgent(BaseAgent):
                 else:
                     yield {"type": "task_complete", "data": {"status": "completed"}}
 
+
             elif evt.type == "error":
                 yield {"type": "error", "data": {"error": str(evt.data)}}
+
 
 
     async def _process_one_tool_call(self, tool_call) -> AsyncGenerator[Dict[str, Any], None]:
