@@ -4,6 +4,10 @@ from typing import AsyncGenerator, Dict, Generator, Iterator, List, Any, Optiona
 from openai import OpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.responses import ResponseInputParam
+from openai.types.conversations import (
+    Conversation,
+    ConversationDeletedResource,
+)
 from pywen.utils.llm_basics import LLMResponse
 from .adapter_common import ResponseEvent
 
@@ -163,6 +167,10 @@ class OpenAIAdapter():
                 if evt.type == "output_text.delta" and isinstance(evt.data, str):
                     yield evt.data
 
+    async def conversations(self) -> str:
+        conv = await self._async.conversations.create()
+        return conv.id
+
     #异步流式
     async def astream_response(self, messages: List[Dict[str, Any]], **params) -> AsyncGenerator[ResponseEvent, None]:
         api_choice = self._pick_api(params.get("api"))
@@ -240,21 +248,35 @@ class OpenAIAdapter():
                 yield ResponseEvent.error(error_msg)
 
             elif event.type == "response.output_item.done":
-                call_id, name , args, kind = '', '','',''
+                call_id, name , args, type = '', '','',''
                 if event.item.type == "function_call":
                     call_id = event.item.call_id
                     name = event.item.name
                     args = event.item.arguments
-                    kind = "function"
-                    yield ResponseEvent.tool_call_ready(call_id, name, args, kind)
+                    type = "function_call"
+                    id = event.item.id
+                    status = event.item.status
+                    yield ResponseEvent.tool_call_ready(call_id, name, args, type, id, status)
                 elif event.item.type == "reasoning":
-                    continue
+                    yield ResponseEvent.tool_call_ready(
+                            call_id = "",
+                            name = "",
+                            args = "",
+                            id = event.item.id,
+                            summary = event.item.summary,
+                            type = "reasoning",
+                            content = event.item.content,
+                            encrypted_content = event.item.encrypted_content,
+                            status = event.item.status,
+                            )
                 elif event.item.type == "custom_tool_call":
                     call_id = event.item.call_id
                     name = event.item.name
                     args = event.item.input
-                    kind = "custom"
-                    yield ResponseEvent.tool_call_ready(call_id, name, args, kind)
+                    type = "custom_tool_call"
+                    id = event.item.id
+                    status = event.item.status
+                    yield ResponseEvent.tool_call_ready(call_id, name, args, type, id, status)
                 else:
                     continue
 

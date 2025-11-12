@@ -1,4 +1,4 @@
-import json
+import json,os,uuid
 from pathlib import Path
 from typing import Dict, List, Union, Literal, Any, AsyncGenerator
 from pydantic import BaseModel
@@ -51,7 +51,7 @@ class CodexAgent(BaseAgent):
             api_key=config.model_config.api_key,
             base_url=config.model_config.base_url,
             model= config.model_config.model or "gpt-5-codex",
-            turn_cnt_max = 10,
+            turn_cnt_max = 5,
             wire_api="responses",
         )
         self.llm_client = LLMClient(self.llmconfig)
@@ -73,6 +73,20 @@ class CodexAgent(BaseAgent):
             tool_list.append(codex_tool)
         return tool_list
 
+    def build_environment_context(self, cwd: str, approval_policy: str = "on-request", 
+            sandbox_mode: str = "workspace-write", network_access: str = "restricted", shell: str = "zsh", ) -> Dict:
+        content = (
+            "<environment_context>\n"
+            f"  <cwd>{cwd}</cwd>\n"
+            f"  <approval_policy>{approval_policy}</approval_policy>\n"
+            f"  <sandbox_mode>{sandbox_mode}</sandbox_mode>\n"
+            f"  <network_access>{network_access}</network_access>\n"
+            f"  <shell>{shell}</shell>\n"
+            "</environment_context>"
+            )
+
+        return {"type": "message", "role": "user", "content": content}
+
     async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
 
         self.turn_index = 0
@@ -90,11 +104,16 @@ class CodexAgent(BaseAgent):
             task=user_message, provider=provider, model=model_name, max_steps=self.max_iterations
         )
         self.history.add_message(role="user", content=user_message)
+        env_msg = self.build_environment_context(cwd=os.getcwd(),shell=os.environ.get("SHELL", "bash"))
+        self.history.add_item(env_msg)
+        conversation_id = await self.llm_client.aconversations_create()
         while self.turn_index < self.turn_cnt_max:
             messages = self.history.to_responses_input()
+            print(f"----当前轮次:  {self.turn_index + 1} -------")
+            print(messages)
             for msg in messages:
                 self.trajectory_recorder.record_input(msg)
-            params = {"model": model_name, "api":"responses", "tools" : self.tools}
+            params = {"conversation": conversation_id, "model": model_name, "api":"responses", "tools" : self.tools}
             stage = self._responses_event_process(messages= messages, params=params)
             async for ev in stage:
                 yield ev
@@ -126,21 +145,54 @@ class CodexAgent(BaseAgent):
                 #TODO. 判断是否可能有多个tool call
                 if evt.data is None: continue
                 tool_args = {} 
-                if evt.data.get('kind') == "custom":
+                if evt.data.get('type') == "custom_tool_call":
+                    #TODO.这里的args可能不是patch
                     tool_args = {
                             "patch" : evt.data.get('args'),
                             }
-                elif evt.data.get('kind') == "function":
+                    custom_tool_call = {
+                            "call_id" : evt.data.get("call_id"),
+                            "input" : evt.data.get('args'),
+                            "name" : evt.data.get('name'),
+                            "type" : "custom_tool_call",
+                            "id" : evt.data.get('id'),
+                            "status" : evt.data.get('status'),
+                            }
+                    self.history.add_item(custom_tool_call)
+                elif evt.data.get('type') == "function_call":
                     try:
                         tool_args = json.loads(evt.data.get('args'))
                     except:
                         tool_args = {"input": evt.data.get('args')}
+
+                    function_call = {
+                            "call_id" : evt.data.get("call_id"),
+                            "arguments" : evt.data.get('args'),
+                            "name" : evt.data.get('name'),
+                            "type" : "function_call",
+                            "id" : evt.data.get('id'),
+                            "status" : evt.data.get('status'),
+                            }
+                    self.history.add_item(function_call)
+                else:
+                    #reasoning
+                    reasoning_call = {
+                            "id" : evt.data.get("id"),
+                            "type" : "reasoning",
+                            "status" : evt.data.get('status'),
+                            "summary" : evt.data.get('summary'),
+                            "encrypted_content" : evt.data.get('encrypted_content'),
+                            }
+                    self.history.add_item(evt.data)
+
                 tc = ToolCall(
                         call_id = evt.data.get("call_id"), 
                         name = evt.data.get('name'), 
                         arguments = tool_args,
                         type = evt.data.get('kind'),
                     )
+
+
                 async for tool_event in self._process_one_tool_call(tc):
                     yield tool_event
 
@@ -152,23 +204,21 @@ class CodexAgent(BaseAgent):
                 continue
 
             elif evt.type == "completed":
+                #一轮结束
                 self.turn_index += 1
                 if evt.data and self.cli_console:
                     total_tokens = evt.data.usage.total_tokens
                     self.cli_console.update_token_usage(total_tokens)
-                #回灌到input
-                if evt.data:
-                    self.history.add_items(evt.data.output)
 
                 has_tool_call = False
                 for out in evt.data.output:
                     if out.type == "function_call" or out.type == "custom_tool_call":
                         has_tool_call = True
                         break
-                if not has_tool_call:
-                    yield {"type": "task_complete", "data": {"status": "completed"}}
-                else:
+                if has_tool_call:
                     yield {"type": "turn_complete", "data": {"status": "completed"}}
+                else:
+                    yield {"type": "task_complete", "data": {"status": "completed"}}
 
             elif evt.type == "error":
                 yield {"type": "error", "data": {"error": str(evt.data)}}

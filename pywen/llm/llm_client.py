@@ -8,6 +8,7 @@ from .adapters.adapter_common import ResponseEvent
 from pywen.utils.llm_basics import LLMMessage, LLMResponse
 
 class ProviderAdapter(Protocol):
+    def conversations(self) -> Any: ...
     def generate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse: ...
     def stream_response(self, messages: List[Dict[str, str]], **params) -> Generator[ResponseEvent, None, None]: ...
     async def agenerate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse: ...
@@ -54,6 +55,10 @@ class LLMClient:
             )
             return cast(ProviderAdapter, impl)
         raise ValueError(f"Unknown provider: {cfg.provider}")
+
+    async def aconversations_create(self) -> str:
+        conv = await self._adapter.conversations()
+        return conv
 
     # 同步，非流式 
     def generate_response(self, messages: List[Dict[str, str]], **params) -> LLMResponse:
