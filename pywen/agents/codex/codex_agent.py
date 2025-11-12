@@ -1,6 +1,6 @@
 import json,os
 from pathlib import Path
-from typing import Dict, List, Union, Literal, Any, AsyncGenerator
+from typing import Dict, List, Mapping, Literal, Any, AsyncGenerator
 from pydantic import BaseModel
 from pywen.agents.base_agent import BaseAgent
 from pywen.llm.llm_client import LLMClient, LLMConfig 
@@ -186,7 +186,14 @@ class CodexAgent(BaseAgent):
             return
         if not self.cli_console:
             return
-        confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
+        #格式不一致，需要特殊处理
+        confirm_tool_call = tool_call
+        if isinstance(tool_call.arguments, Mapping):
+            confirm_tool_call.arguments = dict(tool_call.arguments)
+        elif isinstance(tool_call.arguments, str) and tool_call.name == "apply_patch":
+            confirm_tool_call.arguments = {"patch": tool_call.arguments}
+
+        confirmed = await self.cli_console.confirm_tool_call(confirm_tool_call, tool)
         if not confirmed:
             self.history.add_message(role="assistant", content=f"Tool call '{tool_call.name}' was rejected by the user.")
             payload = {"call_id": tool_call.call_id, 
@@ -198,6 +205,7 @@ class CodexAgent(BaseAgent):
             yield {"type": "tool_result", "data": payload}
             return
         try:
+            print("tool_call: ", tool_call)
             results = await self.tool_executor.execute_tools([tool_call], self.type)
             result = results[0]
             payload = {"call_id": tool_call.call_id, 
@@ -217,6 +225,7 @@ class CodexAgent(BaseAgent):
             self.history.add_item(tool_output_item)
             yield {"type": "tool_result", "data": payload}
         except Exception as e:
+            print("Tool execution error: ", str(e))
             error_msg = f"Tool execution failed: {str(e)}"
             tool_output_item = {"type": "function_call_output", "call_id": tool_call.call_id, "output": "tool failed"}
             self.history.add_item(tool_output_item)
