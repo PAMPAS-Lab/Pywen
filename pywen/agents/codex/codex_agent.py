@@ -1,4 +1,4 @@
-import json,os,uuid
+import json,os
 from pathlib import Path
 from typing import Dict, List, Union, Literal, Any, AsyncGenerator
 from pydantic import BaseModel
@@ -106,14 +106,11 @@ class CodexAgent(BaseAgent):
         self.history.add_message(role="user", content=user_message)
         env_msg = self.build_environment_context(cwd=os.getcwd(),shell=os.environ.get("SHELL", "bash"))
         self.history.add_item(env_msg)
-        conversation_id = await self.llm_client.aconversations_create()
         while self.turn_index < self.turn_cnt_max:
             messages = self.history.to_responses_input()
-            print(f"----当前轮次:  {self.turn_index + 1} -------")
-            print(messages)
             for msg in messages:
                 self.trajectory_recorder.record_input(msg)
-            params = {"conversation": conversation_id, "model": model_name, "api":"responses", "tools" : self.tools}
+            params = {"model": model_name, "api":"responses", "tools" : self.tools}
             stage = self._responses_event_process(messages= messages, params=params)
             async for ev in stage:
                 yield ev
@@ -142,56 +139,15 @@ class CodexAgent(BaseAgent):
                 yield {"type": "llm_chunk", "data": {"content": evt.data}}
     
             elif evt.type == "tool_call.ready":
-                #TODO. 判断是否可能有多个tool call
                 if evt.data is None: continue
-                tool_args = {} 
-                if evt.data.get('type') == "custom_tool_call":
-                    #TODO.这里的args可能不是patch
-                    tool_args = {
-                            "patch" : evt.data.get('args'),
-                            }
-                    custom_tool_call = {
-                            "call_id" : evt.data.get("call_id"),
-                            "input" : evt.data.get('args'),
-                            "name" : evt.data.get('name'),
-                            "type" : "custom_tool_call",
-                            "id" : evt.data.get('id'),
-                            "status" : evt.data.get('status'),
-                            }
-                    self.history.add_item(custom_tool_call)
-                elif evt.data.get('type') == "function_call":
-                    try:
-                        tool_args = json.loads(evt.data.get('args'))
-                    except:
-                        tool_args = {"input": evt.data.get('args')}
-
-                    function_call = {
-                            "call_id" : evt.data.get("call_id"),
-                            "arguments" : evt.data.get('args'),
-                            "name" : evt.data.get('name'),
-                            "type" : "function_call",
-                            "id" : evt.data.get('id'),
-                            "status" : evt.data.get('status'),
-                            }
-                    self.history.add_item(function_call)
+                item = evt.data
+                self.history.add_item(item)
+                if item.type == "function_call":
+                    tc = ToolCall(item.call_id, item.name, json.loads(item.arguments), item.type)
+                elif item.type == "custom_tool_call":
+                    tc = ToolCall(item.call_id, item.name, item.input, item.type)
                 else:
-                    #reasoning
-                    reasoning_call = {
-                            "id" : evt.data.get("id"),
-                            "type" : "reasoning",
-                            "status" : evt.data.get('status'),
-                            "summary" : evt.data.get('summary'),
-                            "encrypted_content" : evt.data.get('encrypted_content'),
-                            }
-                    self.history.add_item(evt.data)
-
-                tc = ToolCall(
-                        call_id = evt.data.get("call_id"), 
-                        name = evt.data.get('name'), 
-                        arguments = tool_args,
-                        type = evt.data.get('kind'),
-                    )
-
+                    continue
 
                 async for tool_event in self._process_one_tool_call(tc):
                     yield tool_event
@@ -254,14 +210,10 @@ class CodexAgent(BaseAgent):
             tool_output_item = {
                     "type": "function_call_output", 
                     "call_id": tool_call.call_id, 
-                    "output": json.dumps(
-                        {
-                            "arguments": tool_call.arguments,
+                    "output": json.dumps({
                             "result": result.result,
-                         }, 
-                     ensure_ascii=False
-                    )
-            }
+                         })
+                    }
             self.history.add_item(tool_output_item)
             yield {"type": "tool_result", "data": payload}
         except Exception as e:

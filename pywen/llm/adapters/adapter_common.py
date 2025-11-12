@@ -58,19 +58,8 @@ class ResponseEvent(Generic[T]):
         return ResponseEvent("tool_call.delta", payload)
 
     @staticmethod
-    def tool_call_ready(call_id: str |None, 
-                        name: str | None, 
-                        args: Any | None, 
-                        type:str, 
-                        id:str, 
-                        status: str, 
-                        summary: Optional[str] = None,
-                        content: Optional[str] = None,
-                        encrypted_content: Optional[str] = None,
-                        ) -> ResponseEvent[Dict[str, Any]]:
-        payload = {"call_id": call_id, "name": name, "args": args, "type": type, "id": id, "status": status,
-                   "summary": summary, "content": content, "encrypted_content": encrypted_content}
-        return ResponseEvent("tool_call.ready", payload)
+    def tool_call_ready(item) -> ResponseEvent[Dict[str, Any]]:
+        return ResponseEvent("tool_call.ready", item)
 
     @staticmethod
     def web_search_begin(call_id: str)-> ResponseEvent[Dict[str, Any]]:

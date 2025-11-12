@@ -230,10 +230,10 @@ class OpenAIAdapter():
                 break
 
     async def _responses_stream_responses_async(self, messages, model, params) -> AsyncGenerator[ResponseEvent, None]:
-        input_items = _to_responses_input(messages)
+        #input_items = _to_responses_input(messages)
         stream = await self._async.responses.create(
             model=model,
-            input=input_items,
+            input= messages,
             stream=True,
             **{k: v for k, v in params.items() if k not in ("model", "api")}
         )
@@ -243,42 +243,11 @@ class OpenAIAdapter():
                 yield ResponseEvent.created(payload)
 
             elif event.type == "response.failed":
-                #TODO,完善错误上报
                 error_msg = getattr(event, "error", "") or "error"
                 yield ResponseEvent.error(error_msg)
 
             elif event.type == "response.output_item.done":
-                call_id, name , args, type = '', '','',''
-                if event.item.type == "function_call":
-                    call_id = event.item.call_id
-                    name = event.item.name
-                    args = event.item.arguments
-                    type = "function_call"
-                    id = event.item.id
-                    status = event.item.status
-                    yield ResponseEvent.tool_call_ready(call_id, name, args, type, id, status)
-                elif event.item.type == "reasoning":
-                    yield ResponseEvent.tool_call_ready(
-                            call_id = "",
-                            name = "",
-                            args = "",
-                            id = event.item.id,
-                            summary = event.item.summary,
-                            type = "reasoning",
-                            content = event.item.content,
-                            encrypted_content = event.item.encrypted_content,
-                            status = event.item.status,
-                            )
-                elif event.item.type == "custom_tool_call":
-                    call_id = event.item.call_id
-                    name = event.item.name
-                    args = event.item.input
-                    type = "custom_tool_call"
-                    id = event.item.id
-                    status = event.item.status
-                    yield ResponseEvent.tool_call_ready(call_id, name, args, type, id, status)
-                else:
-                    continue
+                yield ResponseEvent.tool_call_ready(event.item)
 
             elif event.type == "response.output_text.delta":
                 yield ResponseEvent.text_delta(event.delta)
