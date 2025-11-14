@@ -111,7 +111,7 @@ class CodexAgent(BaseAgent):
 
         while self.turn_index < self.turn_cnt_max:
             messages = self.history.to_responses_input()
-            params = {"model": model_name, "api":"responses", "tools" : self.tools}
+            params = {"model": model_name, "api": self.llmconfig.wire_api, "tools" : self.tools}
 
             self.current_task = None
             for m in reversed(messages):
@@ -198,6 +198,7 @@ class CodexAgent(BaseAgent):
     async def _responses_event_process(self, messages, params) -> AsyncGenerator[Dict[str, Any], None]:
         """在这里处理LLM的事件，转换为agent事件流"""
         async for evt in self.llm_client.astream_response(messages, **params):
+            #print(evt)
             if evt.type == "created":
                 yield {"type": "llm_stream_start", "data": {"message": "LLM response stream started"}}
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
-import asyncio, time
-from typing import Generator,AsyncGenerator,Dict, cast, List, Optional, Protocol,Any
+from typing import Generator,AsyncGenerator,Dict, cast, List, Optional, Protocol,Any, Literal
 from dataclasses import dataclass
 from .adapters.openai_adapter import OpenAIAdapter
 from .adapters.anthropic_adapter import AnthropicAdapter
@@ -23,7 +22,7 @@ class LLMConfig():
     model: str = "gpt-5-codex"
     timeout: float = 60.0
     turn_cnt_max: int = 5
-    wire_api: str = "auto"
+    wire_api: Literal["chat", "responses"] = "responses"  # OpenAI 兼容服务的 API 类型选择
     use_bearer_auth: bool = False  # 是否使用 Bearer token 认证（用于第三方 Anthropic 兼容服务）
 
 class LLMClient:

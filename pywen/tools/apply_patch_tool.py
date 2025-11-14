@@ -3,7 +3,7 @@ import os
 import json
 from dataclasses import dataclass 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, override,Mapping
+from typing import Any, Dict, List, Optional, Tuple, override,Mapping, Literal
 from pywen.tools.base import BaseTool, ToolRiskLevel
 from pywen.utils.tool_basics import ToolResult
 
@@ -16,6 +16,118 @@ MOVE_TO_MARKER = "*** Move to: "
 EOF_MARKER = "*** End of File"
 CHANGE_CONTEXT_MARKER = "@@ "
 EMPTY_CHANGE_CONTEXT_MARKER = "@@"
+
+GRAMMAR_SCHEMA = {
+"type": "grammar",
+"syntax": "lark",
+"definition": r"""
+start: begin_patch hunk+ end_patch
+begin_patch: "*** Begin Patch" LF
+end_patch: "*** End Patch" LF?
+
+hunk: add_hunk | delete_hunk | update_hunk
+add_hunk: "*** Add File: " filename LF add_line+
+delete_hunk: "*** Delete File: " filename LF
+update_hunk: "*** Update File: " filename LF change_move? change?
+
+filename: /(.+)/
+add_line: "+" /(.*)/ LF -> line
+
+change_move: "*** Move to: " filename LF
+change: (change_context | change_line)+ eof_line?
+change_context: ("@@" | "@@ " /(.+)/) LF
+change_line: ("+" | "-" | " ") /(.*)/ LF
+eof_line: "*** End of File" LF
+
+%import common.LF
+"""
+        }
+
+FUNCTION_SCHEMA = {
+                "type": "object",
+                "properties": {
+                    "input": {
+                        "type": "string",
+                        "description": "The entire contents of the apply_patch command"
+                        },
+                    },
+                "required": ["input"],
+                "additionalProperties": False
+                }
+
+
+FUNCTION_DESCRIPTION = r"""
+Use the `apply_patch` tool to edit files.
+Your patch language is a stripped‑down, file‑oriented diff format designed to be easy to parse and safe to apply. You can think of it as a high‑level envelope:
+
+*** Begin Patch
+[ one or more file sections ]
+*** End Patch
+
+Within that envelope, you get a sequence of file operations.
+You MUST include a header to specify the action you are taking.
+Each operation starts with one of three headers:
+
+*** Add File: <path> - create a new file. Every following line is a + line (the initial contents).
+*** Delete File: <path> - remove an existing file. Nothing follows.
+*** Update File: <path> - patch an existing file in place (optionally with a rename).
+
+May be immediately followed by *** Move to: <new path> if you want to rename the file.
+Then one or more “hunks”, each introduced by @@ (optionally followed by a hunk header).
+Within a hunk each line starts with:
+
+For instructions on [context_before] and [context_after]:
+- By default, show 3 lines of code immediately above and 3 lines immediately below each change. If a change is within 3 lines of a previous change, do NOT duplicate the first change’s [context_after] lines in the second change’s [context_before] lines.
+- If 3 lines of context is insufficient to uniquely identify the snippet of code within the file, use the @@ operator to indicate the class or function to which the snippet belongs. For instance, we might have:
+@@ class BaseClass
+[3 lines of pre-context]
+- [old_code]
++ [new_code]
+[3 lines of post-context]
+
+- If a code block is repeated so many times in a class or function such that even a single `@@` statement and 3 lines of context cannot uniquely identify the snippet of code, you can use multiple `@@` statements to jump to the right context. For instance:
+
+@@ class BaseClass
+@@ 	 def method():
+[3 lines of pre-context]
+- [old_code]
++ [new_code]
+[3 lines of post-context]
+
+The full grammar definition is below:
+Patch := Begin { FileOp } End
+Begin := "*** Begin Patch" NEWLINE
+End := "*** End Patch" NEWLINE
+FileOp := AddFile | DeleteFile | UpdateFile
+AddFile := "*** Add File: " path NEWLINE { "+" line NEWLINE }
+DeleteFile := "*** Delete File: " path NEWLINE
+UpdateFile := "*** Update File: " path NEWLINE [ MoveTo ] { Hunk }
+MoveTo := "*** Move to: " newPath NEWLINE
+Hunk := "@@" [ header ] NEWLINE { HunkLine } [ "*** End of File" NEWLINE ]
+HunkLine := (" " | "-" | "+") text NEWLINE
+
+A full patch can combine several operations:
+
+*** Begin Patch
+*** Add File: hello.txt
++Hello world
+*** Update File: src/app.py
+*** Move to: src/main.py
+@@ def greet():
+-print("Hi")
++print("Hello, world!")
+*** Delete File: obsolete.txt
+*** End Patch
+
+It is important to remember:
+
+- You must include a header with your intended action (Add/Delete/Update)
+- You must prefix new lines with `+` even when creating a new file
+- File references can only be relative, NEVER ABSOLUTE.
+"""
+
+CUSTOM_DESCRIPTION = "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON."
+
 
 class ParseError(Exception):
     pass
@@ -349,41 +461,18 @@ def _apply_replacements(original_lines: List[str], reps: List[Tuple[int, int, Li
     return out
 
 class ApplyPatchTool(BaseTool):
-    def __init__(self, config: Optional[Any] = None):
+    def __init__(self, config: Optional[Any] = None, mode: Literal["custom", "function"] = "custom"):
+        self.mode = mode 
         super().__init__(
             name="apply_patch",
             display_name="Apply Patch",
-            description="Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
-            parameter_schema={
-"type": "grammar",
-"syntax": "lark",
-"definition": r"""
-start: begin_patch hunk+ end_patch
-begin_patch: "*** Begin Patch" LF
-end_patch: "*** End Patch" LF?
-
-hunk: add_hunk | delete_hunk | update_hunk
-add_hunk: "*** Add File: " filename LF add_line+
-delete_hunk: "*** Delete File: " filename LF
-update_hunk: "*** Update File: " filename LF change_move? change?
-
-filename: /(.+)/
-add_line: "+" /(.*)/ LF -> line
-
-change_move: "*** Move to: " filename LF
-change: (change_context | change_line)+ eof_line?
-change_context: ("@@" | "@@ " /(.+)/) LF
-change_line: ("+" | "-" | " ") /(.*)/ LF
-eof_line: "*** End of File" LF
-
-%import common.LF
-"""
-            },
+            description= CUSTOM_DESCRIPTION if mode == "custom" else FUNCTION_DESCRIPTION,
+            parameter_schema= GRAMMAR_SCHEMA if mode == "custom" else FUNCTION_SCHEMA,
             is_output_markdown=False,
             can_update_output=False,
             config=config,
             risk_level=ToolRiskLevel.MEDIUM,
-            tool_type="custom",
+            tool_type= mode,
         )
 
     def get_risk_level(self, **kwargs) -> ToolRiskLevel:
@@ -399,7 +488,7 @@ eof_line: "*** End of File" LF
         return f"[{mode}] Apply patch to workspace: {wd}"
 
     async def execute(self, **kwargs) -> ToolResult:
-        patch_text: str = kwargs["patch"]
+        patch_text : str = kwargs.get("input") or kwargs.get("patch") or ""
         workdir = Path(kwargs.get("workdir") or os.getcwd()).resolve()
         allow_heredoc = bool(kwargs.get("allow_heredoc", False))
         dry_run = bool(kwargs.get("dry_run", False))
@@ -479,9 +568,18 @@ eof_line: "*** End of File" LF
             )
 
     def build(self) -> Mapping[str, Any]:
+        if self.mode == "custom":
+            return {
+                    "type" : "custom",
+                    "name" : self.name,
+                    "description": self.description,
+                    "format": self.parameter_schema,
+                    }
         return {
-                "type" : "custom",
-                "name" : self.name,
-                "description": self.description,
-                "format": self.parameter_schema,
-                }
+                "type": "function",
+                "function": {
+                    "name": self.name,
+                    "description": self.description,
+                    "parameters": self.parameter_schema
+                },
+            }

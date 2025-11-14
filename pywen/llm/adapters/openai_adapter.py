@@ -4,15 +4,8 @@ from typing import AsyncGenerator, Dict, Generator, Iterator, List, Any, Optiona
 from openai import OpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.responses import ResponseInputParam
-from openai.types.conversations import (
-    Conversation,
-    ConversationDeletedResource,
-)
 from pywen.utils.llm_basics import LLMResponse
 from .adapter_common import ResponseEvent
-
-def _as_output_text_items(text: str) -> List[Dict[str, str]]:
-    return [{"type": "output_text", "text": text}]
 
 def _tool_feedback_to_tool_result_block(payload: Dict[str, Any]) -> Dict[str, Any]:
     tf = payload.get("tool_feedback", {}) if isinstance(payload, dict) else {}
@@ -33,7 +26,7 @@ def _tool_feedback_to_tool_result_block(payload: Dict[str, Any]) -> Dict[str, An
             {
                 "type": "tool_result",
                 "tool_call_id": call_id,
-                "content": _as_output_text_items(out_text),
+                "content": [{"type": "output_text", "text": out_text}],
                 "is_error": (False if success else True),
             }
         ],
@@ -85,6 +78,7 @@ def _to_responses_input(messages: List[Dict[str, str]]) -> ResponseInputParam:
 
     return cast(ResponseInputParam, items)
 
+"""
 class ChatAggregationAdapter:
     @staticmethod
     def iter_sync(stream_iter: Iterator) -> Generator[ResponseEvent, None, None]:
@@ -109,6 +103,7 @@ class ChatAggregationAdapter:
             if delta:
                 yield ResponseEvent.text_delta(delta)
         yield ResponseEvent.completed({})
+"""
 
 class OpenAIAdapter():
     """
@@ -167,11 +162,12 @@ class OpenAIAdapter():
                 if evt.type == "output_text.delta" and isinstance(evt.data, str):
                     yield evt.data
 
+    #暂时不用会话ID
     async def conversations(self) -> str:
         conv = await self._async.conversations.create()
         return conv.id
 
-    #异步流式
+    #异步流式,目前唯一使用方式
     async def astream_response(self, messages: List[Dict[str, Any]], **params) -> AsyncGenerator[ResponseEvent, None]:
         api_choice = self._pick_api(params.get("api"))
         model = params.get("model", self._default_model)
@@ -207,6 +203,7 @@ class OpenAIAdapter():
         )
         return LLMResponse("")
 
+    # responses 同步 流式
     def _responses_stream_responses_sync(self, messages, model, params) -> Generator[ResponseEvent, None, None]:
         input_items = _to_responses_input(messages)
         stream = self._sync.responses.create(
@@ -229,6 +226,7 @@ class OpenAIAdapter():
                 yield ResponseEvent.error(getattr(event, "error", "") or "error")
                 break
 
+    # responses 异步 流式
     async def _responses_stream_responses_async(self, messages, model, params) -> AsyncGenerator[ResponseEvent, None]:
         #input_items = _to_responses_input(messages)
         stream = await self._async.responses.create(
@@ -304,16 +302,11 @@ class OpenAIAdapter():
         return LLMResponse("")
 
 
+    #chat 同步 流式
     def _chat_stream_responses_sync(self, messages, model, params) -> Generator[ResponseEvent, None, None]:
-        chat_msgs = _to_chat_messages(messages)
-        stream = self._sync.chat.completions.create(
-            model=model,
-            messages=chat_msgs,
-            stream=True,
-            **{k: v for k, v in params.items() if k not in ("model", "api")}
-        )
-        yield from ChatAggregationAdapter.iter_sync(stream)
+        pass
 
+    #chat 异步 流式
     async def _chat_stream_responses_async(self, messages, model, params) -> AsyncGenerator[ResponseEvent, None]:
         chat_msgs = _to_chat_messages(messages)
         stream = await self._async.chat.completions.create(
@@ -322,7 +315,37 @@ class OpenAIAdapter():
             stream=True,
             **{k: v for k, v in params.items() if k not in ("model", "api")}
         )
-        async for evt in ChatAggregationAdapter.iter_async(stream):
-            yield evt
+        yield ResponseEvent.created({})
+        tool_calls: dict[int, dict] = {}
+        async for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta.tool_calls is not None:
+                for tc_delta in delta.tool_calls:
+                    if tc_delta.type != "function" or tc_delta.type != "custom":
+                        continue
+                    idx = tc_delta.index
+                    data = tool_calls.setdefault(
+                        idx, {"id": None, "name": None, "arguments": "", "type": None}
+                    )
+                    if tc_delta.id is not None:
+                        data["id"] = tc_delta.id
+                    if tc_delta.function is not None:
+                        data["name"] = tc_delta.function.name or data["name"]
+                        data["arguments"] += tc_delta.function.arguments or ""
+                        data["type"] = tc_delta.type or data["type"]
+                    yield ResponseEvent.tool_call_delta(
+                        call_id=data["id"] or "",
+                        name=data["name"],
+                        fragment= data["arguments"],
+                        kind=data["type"] or "custom",
+                    )
+                if tool_calls:
+                    print("=================>>>>:", tool_calls)
+                    yield ResponseEvent.tool_call_ready(tool_calls)
 
+            if delta.content is not None:
+                yield ResponseEvent.text_delta(delta.content)
+
+            if chunk.choices[0].finish_reason is not None:
+                yield ResponseEvent.completed({})
 

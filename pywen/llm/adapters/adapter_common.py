@@ -10,8 +10,8 @@ EventType = Literal[
     "error",
     "rate_limits",
     "token_usage",
-    "tool_call.delta",
-    "tool_call.ready",
+    "tool_call.delta",  # indicates a fragment of tool call output
+    "tool_call.ready",  # indicates that a tool call is ready to be executed
     "web_search_begin",
     "message_start",
     "content_block_start",
