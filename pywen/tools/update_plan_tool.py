@@ -1,6 +1,6 @@
 """Codex-compatible Update Plan tool for Pywen.
 """
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Mapping
 from enum import Enum
 
 from .base import BaseTool, ToolResult, ToolRiskLevel
@@ -114,7 +114,7 @@ class UpdatePlanTool(BaseTool):
 
         return ToolResult(call_id="", result=md, metadata={"payload": payload})
 
-    def build(self) -> Dict[str, Any]:
+    def build(self) -> Mapping[str, Any]:
         return {
                 "type" : "function",
                 "name" : self.name,

@@ -121,7 +121,8 @@ class TrajectoryRecorder:
                 "tool_calls": [self._serialize_tool_call(tc) for tc in response.tool_calls]
                 if response.tool_calls else None,
             },
-            "tools_available": [tool.name for tool in tools] if tools else None,
+            "tools_available" : [getattr(t, "name", t.get("name") if isinstance(t, dict) else None)
+                                for t in tools or [] if getattr(t, "name", None) or (isinstance(t, dict) and t.get("name"))] or None,
         }
 
         self.trajectory_data["llm_interactions"].append(interaction)
@@ -253,4 +254,3 @@ class TrajectoryRecorder:
         if isinstance(task, list):
             return task[-1] if task else None
         return task
-

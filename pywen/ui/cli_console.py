@@ -334,7 +334,7 @@ class UnifiedToolResultRenderer:
     def _render_file_read(self, result: Any, arguments: Dict) -> Panel:
         text = "" if result is None else str(result)
         lines = text.splitlines()
-        max_lines = 50
+        max_lines = 100
         truncated = len(lines) > max_lines
         if truncated:
             lines = lines[:max_lines]
@@ -455,21 +455,15 @@ class ApprovalService:
         self.pm = permission_manager
 
     async def confirm(self, tool_call, tool=None) -> bool:
-        name = tool_call.name
-        raw_args = tool_call.arguments 
-        if isinstance(raw_args, Mapping):
-            args_map = dict(raw_args)
-        else:
-            args_map = {
-                    "__freeform": True,
-                    "__len": len(raw_args) if isinstance(raw_args, str) else None,
-                    "__type": type(raw_args).__name__,
-            }
-            if self.pm and self.pm.should_auto_approve(name, **args_map):
-                return True
+        name = tool_call.name if hasattr(tool_call, "name") else tool_call.get("name", "unknown")
+        args = tool_call.arguments if hasattr(tool_call, "arguments") else tool_call.get("arguments", {})
+        if self.pm and self.pm.should_auto_approve(name, **args):
+            return True
+
         if tool:
             from pywen.tools.base import ToolRiskLevel
-            risk_level = tool.get_risk_level(**args_map)
+            args = getattr(tool_call, 'arguments', None) or tool_call.get('arguments', {})
+            risk_level = tool.get_risk_level(**args)
             if risk_level == ToolRiskLevel.SAFE:
                 return True
 

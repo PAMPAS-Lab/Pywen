@@ -4,7 +4,11 @@ from typing import AsyncGenerator, Dict, Generator, Iterator, List, Any, Optiona
 from openai import OpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.responses import ResponseInputParam
-from pywen.utils.llm_basics import LLMMessage, LLMResponse
+from openai.types.conversations import (
+    Conversation,
+    ConversationDeletedResource,
+)
+from pywen.utils.llm_basics import LLMResponse
 from .adapter_common import ResponseEvent
 
 def _as_output_text_items(text: str) -> List[Dict[str, str]]:
@@ -163,6 +167,10 @@ class OpenAIAdapter():
                 if evt.type == "output_text.delta" and isinstance(evt.data, str):
                     yield evt.data
 
+    async def conversations(self) -> str:
+        conv = await self._async.conversations.create()
+        return conv.id
+
     #异步流式
     async def astream_response(self, messages: List[Dict[str, Any]], **params) -> AsyncGenerator[ResponseEvent, None]:
         api_choice = self._pick_api(params.get("api"))
@@ -222,10 +230,10 @@ class OpenAIAdapter():
                 break
 
     async def _responses_stream_responses_async(self, messages, model, params) -> AsyncGenerator[ResponseEvent, None]:
-        input_items = _to_responses_input(messages)
+        #input_items = _to_responses_input(messages)
         stream = await self._async.responses.create(
             model=model,
-            input=input_items,
+            input= messages,
             stream=True,
             **{k: v for k, v in params.items() if k not in ("model", "api")}
         )
@@ -235,39 +243,20 @@ class OpenAIAdapter():
                 yield ResponseEvent.created(payload)
 
             elif event.type == "response.failed":
-                #TODO,完善错误上报
                 error_msg = getattr(event, "error", "") or "error"
                 yield ResponseEvent.error(error_msg)
 
             elif event.type == "response.output_item.done":
-                call_id, name , args, kind = '', '','',''
-                if event.item.type == "function_call":
-                    call_id = event.item.call_id
-                    name = event.item.name
-                    args = event.item.arguments
-                    kind = "function"
-                    yield ResponseEvent.tool_call_ready(call_id, name, args, kind)
-                elif event.item.type == "reasoning":
-                    continue
-                elif event.item.type == "custom_tool_call":
-                    call_id = event.item.call_id
-                    name = event.item.name
-                    args = event.item.input
-                    kind = "custom"
-                    yield ResponseEvent.tool_call_ready(call_id, name, args, kind)
-                else:
-                    yield ResponseEvent.output_item_done({"item_id": event.item})
+                yield ResponseEvent.tool_call_ready(event.item)
 
             elif event.type == "response.output_text.delta":
                 yield ResponseEvent.text_delta(event.delta)
 
-            elif event.type == "response.reasoning_summary_text.delta":
-                # TODO.
+            elif event.type == "response.reasoning_text.delta":
                 yield ResponseEvent.text_delta(event.delta)
 
-            elif event.type == "response.reasoning_text.delta":
-                # TODO.
-                yield ResponseEvent.text_delta(event.delta)
+            elif event.type == "response.reasoning_summary_text.delta":
+                yield ResponseEvent.reasoning_summary_text_delta(event.delta)
 
             elif event.type == "response.content_part.done" or \
                 event.type == "response.function_call_arguments.delta" or \
@@ -284,14 +273,8 @@ class OpenAIAdapter():
                     call_id = item.id 
                     yield ResponseEvent.web_search_begin(call_id)
 
-            elif event.type == "response.reasoning_summary_part.added":
-                yield ResponseEvent.reasoning_summary_part_added("")
-
-            elif event.type == "response.reasoning_summary_text.done":
-                yield ResponseEvent.reasoning_summary_text_done({})
-
             elif event.type == "response.completed":
-                yield ResponseEvent.completed({})
+                yield ResponseEvent.completed(event.response)
                 break
 
             elif event.type == "error":
