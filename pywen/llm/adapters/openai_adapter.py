@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os,json
-from typing import AsyncGenerator, Dict, Generator, Iterator, List, Any, Optional, cast
+from typing import AsyncGenerator, Dict, Generator, List, Any, Optional, cast
 from openai import OpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.responses import ResponseInputParam

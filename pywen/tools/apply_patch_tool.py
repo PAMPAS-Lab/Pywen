@@ -461,18 +461,18 @@ def _apply_replacements(original_lines: List[str], reps: List[Tuple[int, int, Li
     return out
 
 class ApplyPatchTool(BaseTool):
-    def __init__(self, config: Optional[Any] = None, mode: Literal["custom", "function"] = "custom"):
-        self.mode = mode 
+    def __init__(self, config: Optional[Any] = None):
+        self.mode = "custom" if config and "codex" in config.model_config.model.lower() else "function"
         super().__init__(
             name="apply_patch",
             display_name="Apply Patch",
-            description= CUSTOM_DESCRIPTION if mode == "custom" else FUNCTION_DESCRIPTION,
-            parameter_schema= GRAMMAR_SCHEMA if mode == "custom" else FUNCTION_SCHEMA,
+            description= CUSTOM_DESCRIPTION if self.mode == "custom" else FUNCTION_DESCRIPTION,
+            parameter_schema= GRAMMAR_SCHEMA if self.mode == "custom" else FUNCTION_SCHEMA,
             is_output_markdown=False,
             can_update_output=False,
             config=config,
             risk_level=ToolRiskLevel.MEDIUM,
-            tool_type= mode,
+            tool_type= self.mode,
         )
 
     def get_risk_level(self, **kwargs) -> ToolRiskLevel:
