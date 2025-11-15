@@ -340,12 +340,12 @@ class OpenAIAdapter():
                         kind=data["type"] or "custom",
                     )
                 if tool_calls:
-                    print("=================>>>>:", tool_calls)
                     yield ResponseEvent.tool_call_ready(tool_calls)
 
             if delta.content is not None:
                 yield ResponseEvent.text_delta(delta.content)
 
             if chunk.choices[0].finish_reason is not None:
+                #TODO.收集最后的响应内容
                 yield ResponseEvent.completed({})
 

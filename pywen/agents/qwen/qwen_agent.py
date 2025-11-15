@@ -1,263 +1,19 @@
 """Qwen Agent implementation with streaming logic."""
-import os
-import subprocess
-import uuid
-
+import os,subprocess,uuid
 from pathlib import Path
-from dataclasses import dataclass, field
-from enum import Enum
 from typing import Dict, List, Optional, Any, AsyncGenerator
-from datetime import datetime
-
 from pywen.agents.base_agent import BaseAgent
 from pywen.agents.qwen.turn import Turn, TurnStatus
 from pywen.utils.llm_basics import LLMMessage
+from pywen.llm.llm_client import LLMClient, LLMConfig 
 from pywen.agents.qwen.task_continuation_checker import TaskContinuationChecker, TaskContinuationResponse
 from pywen.agents.qwen.loop_detection_service import AgentLoopDetectionService
 from pywen.utils.token_limits import TokenLimits, ModelProvider
 from pywen.core.session_stats import session_stats
 from pywen.hooks.models import HookEvent
+from pywen.utils.llm_basics import LLMResponse
 
-class EventType(Enum):
-    """Types of events during agent execution."""
-    CONTENT = "content"
-    TOOL_CALL = "tool_call"
-    TOOL_RESULT = "tool_result"
-    ERROR = "error"
-    ITERATION_START = "iteration_start"
-    TURN_COMPLETE = "turn_complete"
-
-@dataclass
-class AgentEvent:
-    """Event emitted during agent execution."""
-    type: EventType
-    data: Any
-    timestamp: datetime = field(default_factory=datetime.now)
-
-class QwenAgent(BaseAgent):
-    """Qwen Agent with streaming iterative tool calling logic."""
-    
-    def __init__(self, config, hook_mgr, cli_console=None):
-        # Initialize shared components via base class (includes tool setup)
-        super().__init__(config, hook_mgr, cli_console)
-        self.type = "QwenAgent"
-
-        # Create concrete LLM client implementation
-        from pywen.utils.llm_client import LLMClient as UtilsLLMClient
-        self.llm_client = UtilsLLMClient.create(config.model_config)
-
-        # Register this agent with session stats
-        session_stats.set_current_agent(self.type)
-        # QwenAgent specific initialization (before calling super)
-        self.max_task_turns = getattr(config, 'max_task_turns', 5)
-        self.current_task_turns = 0
-        self.original_user_task = ""
-        self.max_iterations = config.max_iterations
-        
-        # Initialize loop detection service
-        self.loop_detector = AgentLoopDetectionService()
-        
-        # Initialize task continuation checker after llm_client is available
-        self.task_continuation_checker = TaskContinuationChecker(self.llm_client)
-        
-        # Conversation state
-        self.turns: List[Turn] = []
-        self.current_turn: Optional[Turn] = None
-        
-        # Build system prompt
-        #self.system_prompt = self._build_system_prompt()    
-        self.system_prompt = self.get_core_system_prompt()
-
-        # Initialize memory monitor and file restorer
-        # self.dialogue_counter = 0
-        # self.file_metrics = dict()
-        # self.memory_monitor = MemoryMonitor(AdaptiveThreshold())
-        # self.file_restorer = IntelligentFileRestorer()
-
-        # Initialize file metrics
-        self.file_metrics = dict()
-
-
-    #Need: Different Agent need to rewrite
-    def get_enabled_tools(self) -> List[str]:
-        """Return list of enabled tool names for QwenAgent."""
-        return [
-            'read_file',
-            'write_file', 
-            'edit_file',
-            'read_many_files',
-            'ls',
-            'grep',
-            'glob',
-            'bash',
-            'web_fetch',
-            'web_search',
-            'memory'
-        ]
-    
-    #Need: If Agent need more config(api keys, etc.),rewrite this method
-    def get_tool_configs(self) -> Dict[str, Dict[str, Any]]:
-        """Return tool-specific configurations for QwenAgent."""
-        return {
-            'web_search': {
-                'config': self.config
-            }
-        }
-
-
-    #Need: Different Agent need to rewrite
-    async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
-        """Run agent with streaming output and task continuation."""
-        await self.setup_tools_mcp()
-        model_name = self.config.model_config.model
-        # Get token limit from TokenLimits class
-        max_tokens = TokenLimits.get_limit(ModelProvider.QWEN, model_name)
-        #TODO，从console剥离
-        if self.cli_console:
-            self.cli_console.set_max_context_tokens(max_tokens)
-        
-        # Reset task tracking for new user input
-        self.original_user_task = user_message
-        self.current_task_turns = 0
-
-        # Record task start in session stats
-        session_stats.record_task_start(self.type)
-        
-        # Reset loop detection for new task
-        self.loop_detector.reset()
-        
-        # Start trajectory recording
-        self.trajectory_recorder.start_recording(
-            task=user_message,
-            provider=self.config.model_config.provider.value,
-            model=self.config.model_config.model,
-            max_steps=self.max_iterations
-        )
-        
-        # Execute task with continuation logic in streaming mode
-        current_message = user_message
-
-        # Record every dialogue
-        # self.dialogue_counter += 1
-        
-        while self.current_task_turns < self.max_task_turns:
-            self.current_task_turns += 1
-            
-            # Display turn information
-            if self.current_task_turns == 1:
-                yield {"type": "user_message", "data": {"message": current_message, "turn": self.current_task_turns}}
-            else:
-                yield {"type": "task_continuation", "data": {
-                    "message": current_message, 
-                    "turn": self.current_task_turns,
-                    "reason": "Continuing task based on LLM decision"
-                }}
-            
-            # Execute single turn with streaming
-            turn = Turn(id=str(uuid.uuid4()), user_message=current_message)
-            self.current_turn = turn
-            self.turns.append(turn)
-            
-            try:
-                # Streaming start event
-                yield {"type": "turn_start", "data": {"turn_id": turn.id, "message": current_message}}
-                
-                user_msg = LLMMessage(role="user", content=current_message)
-                self.conversation_history.append(user_msg)
-                
-                # Streaming process turn
-                async for event in self._process_turn_streaming(turn):
-                    yield event
-                
-                # Check if we need to continue after this turn
-                # Only check continuation if there are no pending tool calls
-                if not turn.tool_calls or all(tc.call_id in [tr.call_id for tr in turn.tool_results] for tc in turn.tool_calls):
-                    if self.current_task_turns < self.max_task_turns:
-                        continuation_check = await self._check_task_continuation_streaming(turn)
-                        
-                        if continuation_check:
-                            yield {"type": "continuation_check", "data": {
-                                "should_continue": continuation_check.should_continue,
-                                "reasoning": continuation_check.reasoning,
-                                "next_speaker": continuation_check.next_speaker,
-                                "next_action": continuation_check.next_action,
-                                "turn": self.current_task_turns
-                            }}
-                        
-                        if continuation_check.should_continue:
-                            if continuation_check.next_speaker == "user":
-                                # need user input
-                                yield {"type": "waiting_for_user", "data": {
-                                    "reasoning": continuation_check.reasoning,
-                                    "turn": self.current_task_turns
-                                }}
-                                break
-                            else:
-                                # Check for loops before continuing
-                                loop_detected = self.loop_detector.add_and_check(
-                                    continuation_check.reasoning,
-                                    continuation_check.next_action or "continue task"
-                                )
-                                
-                                if loop_detected:
-                                    yield {"type": "loop_detected", "data": {
-                                        "loop_type": loop_detected.loop_type.value,
-                                        "repetition_count": loop_detected.repetition_count,
-                                        "pattern": loop_detected.detected_pattern,
-                                        "turn": self.current_task_turns
-                                    }}
-                                    yield {"type": "task_complete", "data": {
-                                        "total_turns": self.current_task_turns,
-                                        "reasoning": f"Task stopped due to loop detection: {loop_detected.loop_type.value}"
-                                    }}
-                                    break
-                                
-                                # model continue
-                                yield {"type": "model_continues", "data": {
-                                    "reasoning": continuation_check.reasoning,
-                                    "next_action": continuation_check.next_action,
-                                    "turn": self.current_task_turns
-                                }}
-                                
-                                # prepare next message
-                                if continuation_check.next_action:
-                                    current_message = continuation_check.next_action
-                                else:
-                                    current_message = "Please continue with the task..."
-                                continue  # continue with next turn
-                        else:
-                            # task complete
-                            yield {"type": "task_complete", "data": {
-                                "total_turns": self.current_task_turns,
-                                "reasoning": continuation_check.reasoning
-                            }}
-                            break
-                    else:
-                        # reached max turns
-                        yield {"type": "max_turns_reached", "data": {
-                            "total_turns": self.current_task_turns,
-                            "max_turns": self.max_task_turns
-                        }}
-                        break
-                else:
-                    # cannot determine task continuation
-                    yield {"type": "task_complete", "data": {
-                        "total_turns": self.current_task_turns,
-                        "reasoning": "Unable to determine if task should continue"
-                    }}
-                    break
-                    
-            except Exception as e:
-                yield {"type": "error", "data": {"error": str(e)}}
-                break
-
-
-    #Need: Different Agent need to rewrite
-    def _build_system_prompt(self) -> str:
-        """Build system prompt with tool descriptions."""
-        available_tools = self.tool_registry.list_tools()
-        
-        system_prompt = f"""You are PYWEN, an interactive CLI agent who is created by PAMPAS-Lab, specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
+SYSTEM_PROMPT = f"""You are PYWEN, an interactive CLI agent who is created by PAMPAS-Lab, specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
 
 # Core Mandates
 - **Safety First:** Always prioritize user safety and data integrity. Be cautious with destructive operations.
@@ -267,18 +23,8 @@ class QwenAgent(BaseAgent):
 
 # Available Tools
 """
-        
-        # Add tool descriptions
-        for tool in available_tools:
-            system_prompt += f"- **{tool.name}**: {tool.description}\n"
-            if hasattr(tool, 'parameters') and tool.parameters:
-                params = tool.parameters.get('properties', {})
-                if params:
-                    param_list = ", ".join(params.keys())
-                    system_prompt += f"  Parameters: {param_list}\n"
-        
-        system_prompt += f"""
 
+TOOL_PROMPT_SUFFIX = f"""
 # Primary Workflows
 
 ## Software Engineering Tasks
@@ -324,133 +70,31 @@ Assistant: I'll run the tests for you.
 Your core function is efficient and safe assistance. Always prioritize user control and use tools when the user asks you to perform file operations or run commands. You are an agent - please keep going until the user's query is completely resolved.
 """
 
-        system_PLAN_prompt = f"""You are an interactive CLI agent specializing in software engineering tasks. Your primary goal is to help users safely and efficiently.
+SANDBOX_MACOS_SEATBELT_PROMPT = """
+# MacOS Seatbelt
 
-CRITICAL: For ANY new user request, you MUST start with a comprehensive master plan in your first response.
+You are running under macos seatbelt with limited access to files outside the project
+directory or system temp directory, and with limited access to host system resources such as ports. If you encounter
+failures that could be due to macos seatbelt (e.g. if a command fails with 'Operation not permitted' or similar error),
+as you report the error to the user, also explain why you think it could be due to macos seatbelt, and how the user may
+need to adjust their seatbelt profile."""
 
-## FIRST RESPONSE REQUIREMENTS:
-When receiving a new user task, your first response MUST include:
-
-1. **COMPREHENSIVE MASTER PLAN**: Break down the entire task into detailed, sequential steps
-2. **RESEARCH STRATEGY**: If research is needed, outline what specific areas to investigate
-3. **TOOL USAGE PLAN**: Identify which tools you'll use for each step
-4. **SUCCESS CRITERIA**: Define what constitutes task completion
-5. **POTENTIAL CHALLENGES**: Anticipate obstacles and mitigation strategies
-
-Format your master plan like this:
-```
-# MASTER PLAN: [Task Title]
-
-## Overview
-[Brief description of the task and approach]
-
-## Detailed Steps
-1. [Step 1 - be very specific]
-   - Tool: [tool_name]
-   - Purpose: [why this step]
-   - Expected outcome: [what you expect to find/achieve]
-
-2. [Step 2 - be very specific]
-   - Tool: [tool_name] 
-   - Purpose: [why this step]
-   - Expected outcome: [what you expect to find/achieve]
-
-[Continue for all steps...]
-
-## Success Criteria
-- [Criterion 1]
-- [Criterion 2]
-- [...]
-
-## Potential Challenges
-- [Challenge 1]: [Mitigation strategy]
-- [Challenge 2]: [Mitigation strategy]
-```
-
-After presenting the master plan, begin executing Step 1 immediately.
-
-## Available Tools:
-{chr(10).join([f"- {tool.name}: {tool.description}" for tool in available_tools])}
-
-## Tool Usage Guidelines:
-- Use tools systematically according to your master plan
-- Always explain why you're using each tool
-- Provide detailed analysis of tool results
-- If a tool fails, try alternative approaches
-- Update your plan if you discover new requirements
-
-## Multi-Turn Execution:
-- Each turn should make meaningful progress toward the goal
-- Reference your master plan and update progress
-- If you need more research/analysis, clearly state what additional work is needed
-- Only declare completion when ALL success criteria are met
-
-## Response Format:
-- Be thorough and analytical
-- Provide detailed explanations of your findings
-- Show clear progress toward the goal
-- If continuing work is needed, explicitly state the next steps
-
-You are an agent - keep working until the user's request is completely resolved according to your master plan.
+SANBOX_DEFAULT = """
+# Sandbox
+You are running in a sandbox container with limited access to files outside the project directory or system temp directory, 
+and with limited access to host system resources such as ports. If you encounter failures that could be due to sandboxing 
+(e.g. if a command fails with 'Operation not permitted' or similar error), when you report the error to the user, 
+also explain why you think it could be due to sandboxing, and how the user may need to adjust their sandbox configuration.
 """
-        
-        return system_prompt.strip()
 
+SANBOX_OUTSIDE = """
+# Outside of Sandbox
+You are running outside of a sandbox container, directly on the user's system. For critical commands that are particularly 
+likely to modify the user's system outside of the project directory or system temp directory, as you explain the command to the user 
+(per the Explain Critical Commands rule above), also remind the user to consider enabling sandboxing.
+"""
 
-
-
-    def get_core_system_prompt(self,user_memory: str = "") -> str:
-        """
-        Python version of the TS getCoreSystemPrompt function.
-        Builds the system prompt for a CLI agent with dynamic overrides,
-        sandbox/seatbelt detection, and git repository awareness.
-        """
-        PYWEN_CONFIG_DIR = Path.home() / ".qwen"  # Default config dir
-        system_md_enabled = False
-        system_md_path = (PYWEN_CONFIG_DIR / "system.md").resolve()
-
-        # Check PYWEN_SYSTEM_MD env var
-        system_md_var = os.environ.get("PYWEN_SYSTEM_MD", "").lower()
-        if system_md_var and system_md_var not in ["0", "false"]:
-            system_md_enabled = True
-            if system_md_var not in ["1", "true"]:
-                system_md_path = Path(system_md_var).resolve()
-            if not system_md_path.exists():
-                raise FileNotFoundError(f"Missing system prompt file '{system_md_path}'")
-
-        def is_git_repository(path: Path) -> bool:
-            """Check if the given path is inside a Git repository."""
-            try:
-                subprocess.run(
-                    ["git", "-C", str(path), "rev-parse", "--is-inside-work-tree"],
-                    check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-                )
-                return True
-            except subprocess.CalledProcessError:
-                return False
-
-        # Detect sandbox / seatbelt environment
-        def sandbox_info() -> str:
-            if os.environ.get("SANDBOX") == "sandbox-exec":
-                return """
-    # MacOS Seatbelt
-    You are running under macos seatbelt with limited access to files outside the project directory or system temp directory, and with limited access to host system resources such as ports. If you encounter failures that could be due to macos seatbelt (e.g. if a command fails with 'Operation not permitted' or similar error), as you report the error to the user, also explain why you think it could be due to macos seatbelt, and how the user may need to adjust their seatbelt profile.
-    """
-            elif os.environ.get("SANDBOX"):
-                return """
-    # Sandbox
-    You are running in a sandbox container with limited access to files outside the project directory or system temp directory, and with limited access to host system resources such as ports. If you encounter failures that could be due to sandboxing (e.g. if a command fails with 'Operation not permitted' or similar error), when you report the error to the user, also explain why you think it could be due to sandboxing, and how the user may need to adjust their sandbox configuration.
-    """
-            else:
-                return """
-    # Outside of Sandbox
-    You are running outside of a sandbox container, directly on the user's system. For critical commands that are particularly likely to modify the user's system outside of the project directory or system temp directory, as you explain the command to the user (per the Explain Critical Commands rule above), also remind the user to consider enabling sandboxing.
-    """
-
-        # Git repository info block
-        def git_info_block() -> str:
-            if is_git_repository(Path.cwd()):
-                return """
+GIT_INFO_BLOCK = """
     # Git Repository
     - The current working (project) directory is being managed by a git repository.
     - When asked to commit changes or prepare a commit, always start by gathering information using shell commands:
@@ -466,10 +110,8 @@ You are an agent - keep working until the user's request is completely resolved 
     - If a commit fails, never attempt to work around the issues without being asked to do so.
     - Never push changes to a remote repository without being asked explicitly by the user.
     """
-            return ""
 
-        # Base system prompt (full text from TS version, ${} replaced with plain text)
-        base_prompt = system_md_path.read_text() if system_md_enabled else r"""
+BASE_PROMPT_DEFAULT = """
 You are PYWEN, an interactive CLI agent who is created by PAMPAS-Lab, specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
 
 # Core Mandates
@@ -653,215 +295,212 @@ To help you check their settings, I can read their contents. Which one would you
 
 # Final Reminder
 Your core function is efficient and safe assistance. Balance extreme conciseness with the crucial need for clarity, especially regarding safety and potential system modifications. Always prioritize user control and project conventions. Never make assumptions about the contents of files; instead use 'ReadFileTool.Name' or 'ReadManyFilesTool.Name' to ensure you aren't making broad assumptions. Finally, you are an agent - please keep going until the user's query is completely resolved.
-""".strip()
+"""
 
-        # Write basePrompt to file if PYWEN_WRITE_SYSTEM_MD is set
-        write_system_md_var = os.environ.get("PYWEN_WRITE_SYSTEM_MD", "").lower()
-        if write_system_md_var and write_system_md_var not in ["0", "false"]:
-            target_path = (
-                system_md_path
-                if write_system_md_var in ["1", "true"]
-                else Path(write_system_md_var).resolve()
-            )
-            target_path.write_text(base_prompt)
+class QwenAgent(BaseAgent):
+    """Qwen Agent with streaming iterative tool calling logic."""
+    
+    def __init__(self, config, hook_mgr, cli_console=None):
+        super().__init__(config, hook_mgr, cli_console)
+        self.type = "QwenAgent"
+        session_stats.set_current_agent(self.type)
+        self.max_task_turns = getattr(config, 'max_task_turns', 5)
+        self.current_task_turns = 0
+        self.original_user_task = ""
+        self.max_iterations = config.max_iterations
+        self.loop_detector = AgentLoopDetectionService()
+        #self.task_continuation_checker = TaskContinuationChecker(self.llm_client)
+        self.turns: List[Turn] = []
+        self.current_turn: Optional[Turn] = None
+        self.system_prompt = self.get_core_system_prompt()
+        self.file_metrics = dict()
+        self.llmconfig = LLMConfig(
+            provider=config.model_config.provider.value,
+            api_key=config.model_config.api_key,
+            base_url=config.model_config.base_url,
+            model= config.model_config.model or "",
+            turn_cnt_max = self.max_task_turns,
+            wire_api="chat",
+        )
+        self.llm_client = LLMClient(self.llmconfig)
+ 
 
-        # Append sandbox + git info
-        base_prompt += "\n" + sandbox_info()
-        base_prompt += "\n" + git_info_block()
-
-        # Append user memory if provided
-        if user_memory.strip():
-            base_prompt += f"\n\n---\n\n{user_memory.strip()}"
-
-        return base_prompt
-
-    # Specific Agent methods
-    async def _process_turn_streaming(self, turn: Turn) -> AsyncGenerator[Dict[str, Any], None]:
-        """Streaming turn with proper response recording."""
+    def get_enabled_tools(self) -> List[str]:
+        """Return list of enabled tool names for QwenAgent."""
+        return ['read_file', 'write_file',  'edit_file', 'read_many_files',
+            'ls', 'grep', 'glob', 'bash', 'web_fetch', 'web_search', 'memory']
+    
+    async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
+        """Run agent with streaming output and task continuation."""
+        await self.setup_tools_mcp()
+        model_name = self.config.model_config.model or ""
+        max_tokens = TokenLimits.get_limit(ModelProvider.QWEN, model_name)
+        #TODO，从console剥离
+        if self.cli_console:
+            self.cli_console.set_max_context_tokens(max_tokens)
         
-        while turn.iterations < self.max_iterations:
-            turn.iterations += 1
-            yield {"type": "iteration_start", "data": {"iteration": turn.iterations}}
+        self.original_user_task = user_message
+        self.current_task_turns = 0
+        session_stats.record_task_start(self.type)
+        self.loop_detector.reset()
+        self.trajectory_recorder.start_recording(
+            task=user_message,
+            provider=self.config.model_config.provider.value,
+            model= model_name,
+            max_steps=self.max_iterations
+        )
+        yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_task_turns}}
 
-             
-            messages = self._prepare_messages_for_iteration()
-            available_tools = self.tool_registry.list_tools()
+        while self.current_task_turns < self.max_task_turns:
+            self.current_task_turns += 1
+
+            yield {"type": "task_continuation", 
+                   "data": {
+                       "message": user_message, 
+                       "turn": self.current_task_turns,
+                       "reason": "Continuing task based on LLM decision"
+                       }
+                   }
+            turn = Turn(id=str(uuid.uuid4()), user_message=user_message)
+            self.current_turn = turn
+            self.turns.append(turn)
             
             try:
-                response_stream = await self.llm_client.generate_response(
-                    messages=messages,
-                    tools=available_tools,
-                    stream=True
-                )
+                user_msg = LLMMessage(role="user", content=user_message)
+                self.conversation_history.append(user_msg)
                 
-                yield {"type": "llm_stream_start", "data": {}}
+                async for event in self._process_turn_streaming(turn):
+                    yield event
                 
-                # 1. 流式处理响应，收集工具调用
-                final_response = None
-                previous_content = ""
-                collected_tool_calls = []
-                
-                async for response_chunk in response_stream:
-                    final_response = response_chunk
-                    
-                    # 发送内容增量
-                    if response_chunk.content:
-                        current_content = response_chunk.content
-                        if current_content != previous_content:
-                            new_content = current_content[len(previous_content):]
-                            if new_content:
-                                yield {"type": "llm_chunk", "data": {"content": new_content}}
-                            previous_content = current_content
-                    # 收集工具调用（不立即执行）
-                    if response_chunk.tool_calls:
-                        collected_tool_calls.extend(response_chunk.tool_calls)
-                
-                # 2. 流结束后处理
-                if final_response:
-                    turn.add_assistant_response(final_response)
-                    self.cli_console.update_token_usage(final_response.usage.input_tokens)
-                    # 记录LLM交互 (session stats 会在 trajectory_recorder 中自动记录)
-                    self.trajectory_recorder.record_llm_interaction(
-                        messages=messages,
-                        response=final_response,
-                        provider=self.config.model_config.provider.value,
-                        model=self.config.model_config.model,
-                        tools=available_tools,
-                        agent_name=self.type
-                    )
-
-                    # 添加到对话历史
-                    self.conversation_history.append(LLMMessage(
-                        role="assistant",
-                        content=final_response.content,
-                        tool_calls=final_response.tool_calls
-                    ))
-                    
-                    # 3. 批量处理所有工具调用
-                    if collected_tool_calls:
-                        async for tool_event in self._process_tool_calls_streaming(turn, collected_tool_calls):
-                            # if tool_event["type"] != "tool_result":
-                            #     continue
-
-                            # tool_name = tool_event["data"]["name"]
-                            # result    = tool_event["data"]["result"]
-                            # success   = tool_event["data"]["success"]
-
-                            # if not success or tool_name not in {"read_file", "write_file", "edit"}:
-                            #     continue
-
-                            # try:
-                            #     # 1) 取文件路径
-                            #     arguments = tool_event["data"]["arguments"]
-                            #     file_path_str = None
-                            #     if isinstance(result, dict) and "file_path" in result:
-                            #         file_path_str = result["file_path"]
-                            #     elif isinstance(arguments, dict):
-                            #         file_path_str = arguments.get("path")
-
-                            #     if not file_path_str:
-                            #         raise ValueError("missing file path")
-
-                            #     file_path = Path(file_path_str).resolve()
-
-                            #     # 2) 计算 key
-                            #     try:
-                            #         key = str(file_path.relative_to(Path.cwd()))
-                            #     except ValueError:
-                            #         key = str(file_path)
-
-                            #     # 3) 重新 stat —— 失败就整体跳过，不硬凑
-                            #     st = file_path.stat()
-                            #     last_access_ms = int(st.st_atime * 1000)
-                            #     est_tokens = st.st_size // 4
-
-                            # except Exception:
-                            #     # 任何一步拿不到可靠数据就直接放弃本次指标更新
-                            #     continue
-
-                            # # 3) 建档案（尽量从 stat 补充；失败则使用兜底值）
-                            # if key not in self.file_metrics:
-                            #     # 第一次见：根据本次工具类型初始化计数
-                            #     init_read = 1 if tool_name == "read_file" else 0
-                            #     init_write = 1 if tool_name == "write_file" else 0
-                            #     init_edit = 1 if tool_name == "edit" else 0
-                            #     last_op = {"read_file": "read", "write_file": "write", "edit": "edit"}[tool_name]
-
-                            #     self.file_metrics[key] = {
-                            #         "path": key,
-                            #         "lastAccessTime": last_access_ms,
-                            #         "readCount": init_read,
-                            #         "writeCount": init_write,
-                            #         "editCount": init_edit,
-                            #         "operationsInLastHour": 0,      # 可按需要再维护
-                            #         "lastOperation": last_op,
-                            #         "estimatedTokens": est_tokens,
-                            #     }
-                            # else:
-                            #     # 已存在：只累加计数、刷新时间和大小
-                            #     meta = self.file_metrics[key]
-
-                            #     if tool_name == "read_file":
-                            #         meta["readCount"] += 1
-                            #         meta["lastOperation"] = "read"
-                            #     elif tool_name == "write_file":
-                            #         meta["writeCount"] += 1
-                            #         meta["lastOperation"] = "write"
-                            #     elif tool_name == "edit":
-                            #         meta["editCount"] += 1
-                            #         meta["lastOperation"] = "edit"
-
-                            #     meta["lastAccessTime"] = last_access_ms
-                            #     meta["estimatedTokens"] = est_tokens
-
-                            yield tool_event
-                        continue
-                    else:
-                        turn.complete(TurnStatus.COMPLETED)
-                        yield {"type": "turn_token_usage", "data": final_response.usage.total_tokens}
-                        yield {"type": "turn_complete", "data": {"status": "completed"}}
-                        break
-                
-
+                if not turn.tool_calls or all(tc.call_id in [tr.call_id for tr in turn.tool_results] for tc in turn.tool_calls):
+                    if self.current_task_turns < self.max_task_turns:
+                        continuation_check = await self._check_task_continuation_streaming(turn)
                         
+                        if continuation_check:
+                            yield {"type": "continuation_check", "data": {
+                                "should_continue": continuation_check.should_continue,
+                                "reasoning": continuation_check.reasoning,
+                                "next_speaker": continuation_check.next_speaker,
+                                "next_action": continuation_check.next_action,
+                                "turn": self.current_task_turns
+                            }}
+                        
+                        if continuation_check.should_continue:
+                            if continuation_check.next_speaker == "user":
+                                yield {"type": "waiting_for_user", "data": {
+                                    "reasoning": continuation_check.reasoning,
+                                    "turn": self.current_task_turns
+                                }}
+                                break
+                            else:
+                                loop_detected = self.loop_detector.add_and_check(
+                                    continuation_check.reasoning,
+                                    continuation_check.next_action or "continue task"
+                                )
+                                
+                                if loop_detected:
+                                    yield {"type": "loop_detected", "data": {
+                                        "loop_type": loop_detected.loop_type.value,
+                                        "repetition_count": loop_detected.repetition_count,
+                                        "pattern": loop_detected.detected_pattern,
+                                        "turn": self.current_task_turns
+                                    }}
+                                    yield {"type": "task_complete", "data": {
+                                        "total_turns": self.current_task_turns,
+                                        "reasoning": f"Task stopped due to loop detection: {loop_detected.loop_type.value}"
+                                    }}
+                                    break
+                                
+                                yield {"type": "model_continues", "data": {
+                                    "reasoning": continuation_check.reasoning,
+                                    "next_action": continuation_check.next_action,
+                                    "turn": self.current_task_turns
+                                }}
+                                
+                                if continuation_check.next_action:
+                                    user_message = continuation_check.next_action
+                                else:
+                                    user_message = "Please continue with the task..."
+                                continue
+                        else:
+                            yield {"type": "task_complete", "data": {
+                                "total_turns": self.current_task_turns,
+                                "reasoning": continuation_check.reasoning
+                            }}
+                            break
+                    else:
+                        yield {"type": "max_turns_reached", "data": {
+                            "total_turns": self.current_task_turns,
+                            "max_turns": self.max_task_turns
+                        }}
+                        break
+                else:
+                    yield {"type": "task_complete", "data": {
+                        "total_turns": self.current_task_turns,
+                        "reasoning": "Unable to determine if task should continue"
+                    }}
+                    break
+                    
             except Exception as e:
                 yield {"type": "error", "data": {"error": str(e)}}
-                turn.error(str(e))
-                raise e
+                break
 
+    async def _process_turn_streaming(self, turn: Turn) -> AsyncGenerator[Dict[str, Any], None]:
+        """ turn streaming processing with tool calls."""
+        messages = self._prepare_messages_for_iteration()
+        tools = self.tool_registry.list_tools()
+        
+        collected_tool_calls = []
+        final_response: Optional[LLMResponse] = None
+        async for evt in self.llm_client.astream_response(messages= [], tools= tools, stream=True, api = "chat"):
+            if evt.type == "created":
+                yield {"type": "llm_stream_start", "data": {}}
+            elif evt.type == "output_text.delta":
+                yield {"type": "llm_chunk", "data": {"content": evt.data}}
+            elif evt.type == "tool_call":
+                collected_tool_calls.append(evt.data)
+            elif evt.type == "completed":
+                ## TODO. 收集最终响应
+                final_response = evt.data
+            else:
+                pass
 
-        # Run Memory monitor and file restorer
-        # total_tokens = 0
-        # if final_response and hasattr(final_response, "usage") and final_response.usage:
-        #     total_tokens = final_response.usage.total_tokens
+        if not final_response:
+            raise ValueError("LLM did not return a final response.")
 
-        # compression = await self.memory_monitor.run_monitored(
-        #     self.dialogue_counter,
-        #     self.conversation_history,
-        #     total_tokens
-        # )
+        turn.add_assistant_response(final_response)
+        if self.cli_console:
+            self.cli_console.update_token_usage(final_response.usage.input_tokens)
+        self.trajectory_recorder.record_llm_interaction(
+            messages=messages,
+            response=final_response,
+            provider=self.config.model_config.provider.value,
+            model=self.config.model_config.model or "",
+            tools=tools,
+            agent_name=self.type
+        )
 
-        # if compression is not None:
-        #     file_content = self.file_restorer.file_recover(self.file_metrics)
-        #     if file_content is not None:
-        #         summary = compression + "\nHere is the potentially important file content:\n" + file_content
-        #         self.conversation_history = [LLMMessage(role="user", content=summary)]
-        #     else:
-        #         summary = compression
-        #         self.conversation_history = [LLMMessage(role="user", content=summary)]
-                                    
-        # Check if we hit max iterations
-        if turn.iterations >= self.max_iterations and turn.status == TurnStatus.ACTIVE:
-            turn.complete(TurnStatus.MAX_ITERATIONS)
-            yield {"type": "max_iterations", "data": {"iterations": turn.iterations}}
+        self.conversation_history.append(LLMMessage(
+            role="assistant",
+            content=final_response.content,
+            tool_calls=final_response.tool_calls
+        ))
+        
+        if collected_tool_calls:
+            async for tool_event in self._process_tool_calls_streaming(turn, collected_tool_calls):
+                yield tool_event
 
+        turn.complete(TurnStatus.COMPLETED)
+        yield {"type": "turn_token_usage", "data": final_response.usage.total_tokens}
+        yield {"type": "turn_complete", "data": {"status": "completed"}}
+
+        
     async def _process_tool_calls_streaming(self, turn: Turn, tool_calls) -> AsyncGenerator[Dict[str, Any], None]:
         """流式处理工具调用."""
         
         for tool_call in tool_calls:
             turn.add_tool_call(tool_call)
             
-            # 发送工具调用开始事件
             yield {"type": "tool_call_start", "data": {
                 "call_id": tool_call.call_id,
                 "name": tool_call.name,
@@ -870,11 +509,10 @@ Your core function is efficient and safe assistance. Balance extreme conciseness
             
             # 检查是否需要用户确认（基于工具风险等级）
             if hasattr(self, 'cli_console') and self.cli_console:
-                # 获取工具实例来检查风险等级
                 tool = self.tool_registry.get_tool(tool_call.name)
                 if tool:
                     confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
-                    if confirmation_details:  # 只有需要确认的工具才询问用户
+                    if confirmation_details:
                         #TODO，从console剥离
                         confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
                         if not confirmed:
@@ -928,8 +566,6 @@ Your core function is efficient and safe assistance. Balance extreme conciseness
                 results = await self.tool_executor.execute_tools([tool_call], self.type)
                 result = results[0]
 
-
-                # 立即发送工具结果（补充 arguments 以便后续路径解析回退）
                 yield {"type": "tool_result", "data": {
                     "call_id": tool_call.call_id,
                     "name": tool_call.name,
@@ -942,7 +578,6 @@ Your core function is efficient and safe assistance. Balance extreme conciseness
                 turn.add_tool_result(result)
                 
                 # 添加到对话历史
-                # Handle both structured (dict) and simple (str) result formats
                 if isinstance(result.result, dict):
                     content = result.result.get('summary', str(result.result)) or str(result.error)
                 else:
@@ -1068,4 +703,74 @@ Your core function is efficient and safe assistance. Balance extreme conciseness
         messages.extend(self.conversation_history)
         return messages
 
+    def _build_system_prompt(self) -> str:
+        """Build system prompt with tool descriptions."""
+        available_tools = self.tool_registry.list_tools()
+        system_prompt = SYSTEM_PROMPT 
+        for tool in available_tools:
+            system_prompt += f"- **{tool.name}**: {tool.description}\n"
+            if not hasattr(tool, 'parameters') or tool.parameters:
+                continue
+            params = tool.parameters.get('properties', {})
+            if not params:
+                continue
+            param_list = ", ".join(params.keys())
+            system_prompt += f"  Parameters: {param_list}\n"
+        
+        system_prompt += TOOL_PROMPT_SUFFIX 
+        return system_prompt.strip()
 
+    def get_core_system_prompt(self,user_memory: str = "") -> str:
+        PYWEN_CONFIG_DIR = Path.home() / ".qwen"
+        system_md_enabled = False
+        system_md_path = (PYWEN_CONFIG_DIR / "system.md").resolve()
+        system_md_var = os.environ.get("PYWEN_SYSTEM_MD", "").lower()
+        if system_md_var and system_md_var not in ["0", "false"]:
+            system_md_enabled = True
+            if system_md_var not in ["1", "true"]:
+                system_md_path = Path(system_md_var).resolve()
+            if not system_md_path.exists():
+                raise FileNotFoundError(f"Missing system prompt file '{system_md_path}'")
+
+        def is_git_repository(path: Path) -> bool:
+            """Check if the given path is inside a Git repository."""
+            try:
+                subprocess.run(
+                    ["git", "-C", str(path), "rev-parse", "--is-inside-work-tree"],
+                    check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+                return True
+            except subprocess.CalledProcessError:
+                return False
+
+        def sandbox_info() -> str:
+            if os.environ.get("SANDBOX") == "sandbox-exec":
+                return SANDBOX_MACOS_SEATBELT_PROMPT 
+            elif os.environ.get("SANDBOX"):
+                return SANBOX_DEFAULT 
+            else:
+                return SANBOX_OUTSIDE 
+
+        def git_info_block() -> str:
+            if not is_git_repository(Path.cwd()):
+                return "" 
+            return  GIT_INFO_BLOCK
+
+        base_prompt = system_md_path.read_text() if system_md_enabled else BASE_PROMPT_DEFAULT.strip()
+
+        write_system_md_var = os.environ.get("PYWEN_WRITE_SYSTEM_MD", "").lower()
+        if write_system_md_var and write_system_md_var not in ["0", "false"]:
+            target_path = (
+                system_md_path
+                if write_system_md_var in ["1", "true"]
+                else Path(write_system_md_var).resolve()
+            )
+            target_path.write_text(base_prompt)
+
+        base_prompt += "\n" + sandbox_info()
+        base_prompt += "\n" + git_info_block()
+
+        if user_memory.strip():
+            base_prompt += f"\n\n---\n\n{user_memory.strip()}"
+
+        return base_prompt
