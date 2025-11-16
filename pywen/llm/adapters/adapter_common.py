@@ -52,9 +52,9 @@ class ResponseEvent(Generic[T]):
         return ResponseEvent("error", payload)
 
     @staticmethod
-    def tool_call_delta(call_id: str, name: str | None, fragment: str, kind: str) -> ResponseEvent[Dict[str, Any]]:
+    def tool_call_delta(call_id: str, name: str | None, arguments: str, type: str) -> ResponseEvent[Dict[str, Any]]:
         # kind: "function" | "custom"
-        payload = {"call_id": call_id, "name": name, "fragment": fragment, "kind": kind}
+        payload = {"call_id": call_id, "name": name, "arguments": arguments, "type": type}
         return ResponseEvent("tool_call.delta", payload)
 
     @staticmethod

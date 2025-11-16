@@ -365,134 +365,179 @@ class QwenAgent(BaseAgent):
             self.current_turn = turn
             self.turns.append(turn)
             
-            try:
-                user_msg = LLMMessage(role="user", content=user_message)
-                self.conversation_history.append(user_msg)
-                
-                async for event in self._process_turn_streaming(turn):
-                    yield event
-                
-                if not turn.tool_calls or all(tc.call_id in [tr.call_id for tr in turn.tool_results] for tc in turn.tool_calls):
-                    if self.current_task_turns < self.max_task_turns:
-                        continuation_check = await self._check_task_continuation_streaming(turn)
-                        
-                        if continuation_check:
-                            yield {"type": "continuation_check", "data": {
-                                "should_continue": continuation_check.should_continue,
+            user_msg = LLMMessage(role="user", content=user_message)
+            self.conversation_history.append(user_msg)
+            
+            async for event in self._process_turn_streaming(user_msg):
+                yield event
+            
+            if not turn.tool_calls or all(tc.call_id in [tr.call_id for tr in turn.tool_results] for tc in turn.tool_calls):
+                if self.current_task_turns < self.max_task_turns:
+                    continuation_check = await self._check_task_continuation_streaming(turn)
+                    
+                    if continuation_check:
+                        yield {"type": "continuation_check", "data": {
+                            "should_continue": continuation_check.should_continue,
+                            "reasoning": continuation_check.reasoning,
+                            "next_speaker": continuation_check.next_speaker,
+                            "next_action": continuation_check.next_action,
+                            "turn": self.current_task_turns
+                        }}
+                    
+                    if continuation_check.should_continue:
+                        if continuation_check.next_speaker == "user":
+                            yield {"type": "waiting_for_user", "data": {
                                 "reasoning": continuation_check.reasoning,
-                                "next_speaker": continuation_check.next_speaker,
+                                "turn": self.current_task_turns
+                            }}
+                            break
+                        else:
+                            loop_detected = self.loop_detector.add_and_check(
+                                continuation_check.reasoning,
+                                continuation_check.next_action or "continue task"
+                            )
+                            
+                            if loop_detected:
+                                yield {"type": "loop_detected", "data": {
+                                    "loop_type": loop_detected.loop_type.value,
+                                    "repetition_count": loop_detected.repetition_count,
+                                    "pattern": loop_detected.detected_pattern,
+                                    "turn": self.current_task_turns
+                                }}
+                                yield {"type": "task_complete", "data": {
+                                    "total_turns": self.current_task_turns,
+                                    "reasoning": f"Task stopped due to loop detection: {loop_detected.loop_type.value}"
+                                }}
+                                break
+                            
+                            yield {"type": "model_continues", "data": {
+                                "reasoning": continuation_check.reasoning,
                                 "next_action": continuation_check.next_action,
                                 "turn": self.current_task_turns
                             }}
-                        
-                        if continuation_check.should_continue:
-                            if continuation_check.next_speaker == "user":
-                                yield {"type": "waiting_for_user", "data": {
-                                    "reasoning": continuation_check.reasoning,
-                                    "turn": self.current_task_turns
-                                }}
-                                break
+                            
+                            if continuation_check.next_action:
+                                user_message = continuation_check.next_action
                             else:
-                                loop_detected = self.loop_detector.add_and_check(
-                                    continuation_check.reasoning,
-                                    continuation_check.next_action or "continue task"
-                                )
-                                
-                                if loop_detected:
-                                    yield {"type": "loop_detected", "data": {
-                                        "loop_type": loop_detected.loop_type.value,
-                                        "repetition_count": loop_detected.repetition_count,
-                                        "pattern": loop_detected.detected_pattern,
-                                        "turn": self.current_task_turns
-                                    }}
-                                    yield {"type": "task_complete", "data": {
-                                        "total_turns": self.current_task_turns,
-                                        "reasoning": f"Task stopped due to loop detection: {loop_detected.loop_type.value}"
-                                    }}
-                                    break
-                                
-                                yield {"type": "model_continues", "data": {
-                                    "reasoning": continuation_check.reasoning,
-                                    "next_action": continuation_check.next_action,
-                                    "turn": self.current_task_turns
-                                }}
-                                
-                                if continuation_check.next_action:
-                                    user_message = continuation_check.next_action
-                                else:
-                                    user_message = "Please continue with the task..."
-                                continue
-                        else:
-                            yield {"type": "task_complete", "data": {
-                                "total_turns": self.current_task_turns,
-                                "reasoning": continuation_check.reasoning
-                            }}
-                            break
+                                user_message = "Please continue with the task..."
+                            continue
                     else:
-                        yield {"type": "max_turns_reached", "data": {
+                        yield {"type": "task_complete", "data": {
                             "total_turns": self.current_task_turns,
-                            "max_turns": self.max_task_turns
+                            "reasoning": continuation_check.reasoning
                         }}
                         break
                 else:
-                    yield {"type": "task_complete", "data": {
+                    yield {"type": "max_turns_reached", "data": {
                         "total_turns": self.current_task_turns,
-                        "reasoning": "Unable to determine if task should continue"
+                        "max_turns": self.max_task_turns
                     }}
                     break
-                    
-            except Exception as e:
-                yield {"type": "error", "data": {"error": str(e)}}
+            else:
+                yield {"type": "task_complete", "data": {
+                    "total_turns": self.current_task_turns,
+                    "reasoning": "Unable to determine if task should continue"
+                }}
                 break
-
-    async def _process_turn_streaming(self, turn: Turn) -> AsyncGenerator[Dict[str, Any], None]:
-        """ turn streaming processing with tool calls."""
+                
+    async def _process_turn_streaming(self, user_msg) -> AsyncGenerator[Dict[str, Any], None]:
         messages = self._prepare_messages_for_iteration()
         tools = self.tool_registry.list_tools()
-        
-        collected_tool_calls = []
-        final_response: Optional[LLMResponse] = None
-        async for evt in self.llm_client.astream_response(messages= [], tools= tools, stream=True, api = "chat"):
+        tool_calls = []
+        completed_resp = {}
+        async for evt in self.llm_client.astream_response(messages= [], tools= tools, api = "chat"):
             if evt.type == "created":
                 yield {"type": "llm_stream_start", "data": {}}
             elif evt.type == "output_text.delta":
                 yield {"type": "llm_chunk", "data": {"content": evt.data}}
-            elif evt.type == "tool_call":
-                collected_tool_calls.append(evt.data)
+            elif evt.type == "tool_call.ready":
+                tool_calls = evt.data or []
+                async for tc_evt in self._process_tool_calls(tool_calls):
+                    yield tc_evt
             elif evt.type == "completed":
-                ## TODO. 收集最终响应
-                final_response = evt.data
+                completed_resp = evt.data
+                if not completed_resp:
+                    continue
+                if self.cli_console:
+                    self.cli_console.update_token_usage(completed_resp.get("completed",{}).usage.input_tokens)
+                yield {"type": "turn_token_usage", "data": completed_resp.get("completed",{}).usage.totol_tokens}
+                yield {"type": "turn_complete", "data": {"status": "completed"}}
+
+                self.conversation_history.append(LLMMessage(
+                    role="assistant",
+                    content = completed_resp.get("completed", {}).text,
+                    tool_calls = completed_resp.get("completed", {}).tool_calls
+                ))
+         
+                self.trajectory_recorder.record_llm_interaction(
+                    messages=messages,
+                    response= None, #TODO. completed_resp,
+                    provider=self.config.model_config.provider.value,
+                    model=self.config.model_config.model or "",
+                    tools=tools,
+                    agent_name=self.type
+                )
+
+       
+
+    async def _process_tool_calls(self, tool_calls) -> AsyncGenerator[Dict[str, Any], None]:
+        for tool_call in tool_calls:
+            data = {
+                "call_id": tool_call.call_id,
+                "name": tool_call.name,
+                "arguments": tool_call.arguments
+            }
+            yield {"type": "tool_call_start", "data": data}
+
+            if not self.cli_console:
+                continue
+            tool = self.tool_registry.get_tool(tool_call.name)
+            if not tool:
+                continue
+            confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
+            if confirmation_details:
+                confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
+                if not confirmed:
+                    tool_msg = LLMMessage(
+                        role="tool",
+                        content="Tool execution was cancelled by user",
+                        tool_call_id=tool_call.call_id
+                    )
+                    self.conversation_history.append(tool_msg)
+
+                    yield {"type": "tool_result", "data": {
+                        "call_id": tool_call.call_id,
+                        "name": tool_call.name,
+                        "result": "Tool execution rejected by user",
+                        "success": False,
+                        "error": "Tool execution rejected by user"
+                    }}
+                    continue
+
+            results = await self.tool_executor.execute_tools([tool_call], self.type)
+            result = results[0]
+            yield {"type": "tool_result", 
+                   "data": {
+                        "call_id": tool_call.call_id,
+                        "name": tool_call.name,
+                        "result": result.result,
+                        "success": result.success,
+                        "error": result.error,
+                        "arguments": tool_call.arguments
+                    }
+                }
+            #TODO.待定，貌似没有result字段，需要确认
+            if isinstance(result.result, dict):
+                content = result.result.get('summary', str(result.result)) or str(result.error)
             else:
-                pass
+                content = str(result.result) or str(result.error)
 
-        if not final_response:
-            raise ValueError("LLM did not return a final response.")
-
-        turn.add_assistant_response(final_response)
-        if self.cli_console:
-            self.cli_console.update_token_usage(final_response.usage.input_tokens)
-        self.trajectory_recorder.record_llm_interaction(
-            messages=messages,
-            response=final_response,
-            provider=self.config.model_config.provider.value,
-            model=self.config.model_config.model or "",
-            tools=tools,
-            agent_name=self.type
-        )
-
-        self.conversation_history.append(LLMMessage(
-            role="assistant",
-            content=final_response.content,
-            tool_calls=final_response.tool_calls
-        ))
-        
-        if collected_tool_calls:
-            async for tool_event in self._process_tool_calls_streaming(turn, collected_tool_calls):
-                yield tool_event
-
-        turn.complete(TurnStatus.COMPLETED)
-        yield {"type": "turn_token_usage", "data": final_response.usage.total_tokens}
-        yield {"type": "turn_complete", "data": {"status": "completed"}}
+            tool_msg = LLMMessage(
+                    role="tool",
+                    content=content,
+                    tool_call_id=tool_call.call_id
+            )
+            self.conversation_history.append(tool_msg)
 
         
     async def _process_tool_calls_streaming(self, turn: Turn, tool_calls) -> AsyncGenerator[Dict[str, Any], None]:

@@ -317,35 +317,42 @@ class OpenAIAdapter():
         )
         yield ResponseEvent.created({})
         tool_calls: dict[int, dict] = {}
+        text_buffer: str = ""
         async for chunk in stream:
             delta = chunk.choices[0].delta
-            if delta.tool_calls is not None:
+            if delta.tool_calls:
                 for tc_delta in delta.tool_calls:
-                    if tc_delta.type != "function" or tc_delta.type != "custom":
+                    if tc_delta.type not in ("function", "custom"):
                         continue
                     idx = tc_delta.index
                     data = tool_calls.setdefault(
-                        idx, {"id": None, "name": None, "arguments": "", "type": None}
+                        idx, 
+                        {"id": tc_delta.id, "name": None, "arguments": "", "type": tc_delta.type or "custom"}
                     )
-                    if tc_delta.id is not None:
-                        data["id"] = tc_delta.id
-                    if tc_delta.function is not None:
-                        data["name"] = tc_delta.function.name or data["name"]
-                        data["arguments"] += tc_delta.function.arguments or ""
-                        data["type"] = tc_delta.type or data["type"]
+                    data["id"] = tc_delta.id
+                    data["name"] = tc_delta.function.name or data["name"]
+                    data["arguments"] += tc_delta.function.arguments or ""
+                    data["type"] = tc_delta.type or data["type"]
                     yield ResponseEvent.tool_call_delta(
-                        call_id=data["id"] or "",
-                        name=data["name"],
-                        fragment= data["arguments"],
-                        kind=data["type"] or "custom",
+                        call_id = data["id"] or "",
+                        name = data["name"],
+                        arguments = data["arguments"],
+                        type = data["type"] or "custom",
                     )
-                if tool_calls:
-                    yield ResponseEvent.tool_call_ready(tool_calls)
 
             if delta.content is not None:
+                text_buffer += delta.content
                 yield ResponseEvent.text_delta(delta.content)
 
-            if chunk.choices[0].finish_reason is not None:
-                #TODO.收集最后的响应内容
-                yield ResponseEvent.completed({})
+            finish_reason = chunk.choices[0].finish_reason
+            if finish_reason is not None:
+                if finish_reason == "tool_calls" and tool_calls:
+                    yield ResponseEvent.tool_call_ready(tool_calls)
+                payload = {
+                    "text": text_buffer,
+                    "finish_reason": finish_reason,
+                    "tool_calls": tool_calls,
+                    "usage": chunk.usage,
+                }
+                yield ResponseEvent.completed(payload)
 
