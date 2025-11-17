@@ -1,9 +1,9 @@
 """Qwen Agent implementation with streaming logic."""
-import os,subprocess,uuid
+import os,subprocess, json
 from pathlib import Path
 from typing import Dict, List, Optional, Any, AsyncGenerator
+from types import  SimpleNamespace
 from pywen.agents.base_agent import BaseAgent
-from pywen.agents.qwen.turn import Turn, TurnStatus
 from pywen.utils.llm_basics import LLMMessage
 from pywen.llm.llm_client import LLMClient, LLMConfig 
 from pywen.agents.qwen.task_continuation_checker import TaskContinuationChecker, TaskContinuationResponse
@@ -11,7 +11,7 @@ from pywen.agents.qwen.loop_detection_service import AgentLoopDetectionService
 from pywen.utils.token_limits import TokenLimits, ModelProvider
 from pywen.core.session_stats import session_stats
 from pywen.hooks.models import HookEvent
-from pywen.utils.llm_basics import LLMResponse
+from pywen.utils.llm_basics import LLMResponse, ToolCall
 
 SYSTEM_PROMPT = f"""You are PYWEN, an interactive CLI agent who is created by PAMPAS-Lab, specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
 
@@ -305,13 +305,11 @@ class QwenAgent(BaseAgent):
         self.type = "QwenAgent"
         session_stats.set_current_agent(self.type)
         self.max_task_turns = getattr(config, 'max_task_turns', 5)
-        self.current_task_turns = 0
+        self.current_turn_index = 0
         self.original_user_task = ""
         self.max_iterations = config.max_iterations
         self.loop_detector = AgentLoopDetectionService()
         #self.task_continuation_checker = TaskContinuationChecker(self.llm_client)
-        self.turns: List[Turn] = []
-        self.current_turn: Optional[Turn] = None
         self.system_prompt = self.get_core_system_prompt()
         self.file_metrics = dict()
         self.llmconfig = LLMConfig(
@@ -323,12 +321,6 @@ class QwenAgent(BaseAgent):
             wire_api="chat",
         )
         self.llm_client = LLMClient(self.llmconfig)
- 
-
-    def get_enabled_tools(self) -> List[str]:
-        """Return list of enabled tool names for QwenAgent."""
-        return ['read_file', 'write_file',  'edit_file', 'read_many_files',
-            'ls', 'grep', 'glob', 'bash', 'web_fetch', 'web_search', 'memory']
     
     async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
         """Run agent with streaming output and task continuation."""
@@ -340,7 +332,7 @@ class QwenAgent(BaseAgent):
             self.cli_console.set_max_context_tokens(max_tokens)
         
         self.original_user_task = user_message
-        self.current_task_turns = 0
+        self.current_turn_index = 0
         session_stats.record_task_start(self.type)
         self.loop_detector.reset()
         self.trajectory_recorder.start_recording(
@@ -349,126 +341,95 @@ class QwenAgent(BaseAgent):
             model= model_name,
             max_steps=self.max_iterations
         )
-        yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_task_turns}}
+        yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_turn_index}}
+        self.conversation_history = self._update_system_prompt(self.system_prompt, self.conversation_history)
 
-        while self.current_task_turns < self.max_task_turns:
-            self.current_task_turns += 1
-
-            yield {"type": "task_continuation", 
-                   "data": {
-                       "message": user_message, 
-                       "turn": self.current_task_turns,
-                       "reason": "Continuing task based on LLM decision"
-                       }
-                   }
-            turn = Turn(id=str(uuid.uuid4()), user_message=user_message)
-            self.current_turn = turn
-            self.turns.append(turn)
-            
-            user_msg = LLMMessage(role="user", content=user_message)
-            self.conversation_history.append(user_msg)
-            
-            async for event in self._process_turn_streaming(user_msg):
+        while self.current_turn_index < self.max_task_turns:
+            #data = {"message": user_message, "turn": self.current_turn_index, "reason": "Continuing task based on LLM decision" }
+            #yield {"type": "task_continuation", "data": data}
+            async for event in self._process_turn_stream(user_message):
                 yield event
-            
-            if not turn.tool_calls or all(tc.call_id in [tr.call_id for tr in turn.tool_results] for tc in turn.tool_calls):
-                if self.current_task_turns < self.max_task_turns:
-                    continuation_check = await self._check_task_continuation_streaming(turn)
-                    
-                    if continuation_check:
-                        yield {"type": "continuation_check", "data": {
-                            "should_continue": continuation_check.should_continue,
-                            "reasoning": continuation_check.reasoning,
-                            "next_speaker": continuation_check.next_speaker,
-                            "next_action": continuation_check.next_action,
-                            "turn": self.current_task_turns
-                        }}
-                    
-                    if continuation_check.should_continue:
-                        if continuation_check.next_speaker == "user":
-                            yield {"type": "waiting_for_user", "data": {
-                                "reasoning": continuation_check.reasoning,
-                                "turn": self.current_task_turns
-                            }}
-                            break
-                        else:
-                            loop_detected = self.loop_detector.add_and_check(
-                                continuation_check.reasoning,
-                                continuation_check.next_action or "continue task"
-                            )
-                            
-                            if loop_detected:
-                                yield {"type": "loop_detected", "data": {
-                                    "loop_type": loop_detected.loop_type.value,
-                                    "repetition_count": loop_detected.repetition_count,
-                                    "pattern": loop_detected.detected_pattern,
-                                    "turn": self.current_task_turns
-                                }}
-                                yield {"type": "task_complete", "data": {
-                                    "total_turns": self.current_task_turns,
-                                    "reasoning": f"Task stopped due to loop detection: {loop_detected.loop_type.value}"
-                                }}
-                                break
-                            
-                            yield {"type": "model_continues", "data": {
-                                "reasoning": continuation_check.reasoning,
-                                "next_action": continuation_check.next_action,
-                                "turn": self.current_task_turns
-                            }}
-                            
-                            if continuation_check.next_action:
-                                user_message = continuation_check.next_action
-                            else:
-                                user_message = "Please continue with the task..."
-                            continue
-                    else:
-                        yield {"type": "task_complete", "data": {
-                            "total_turns": self.current_task_turns,
-                            "reasoning": continuation_check.reasoning
-                        }}
-                        break
-                else:
-                    yield {"type": "max_turns_reached", "data": {
-                        "total_turns": self.current_task_turns,
-                        "max_turns": self.max_task_turns
-                    }}
-                    break
-            else:
-                yield {"type": "task_complete", "data": {
-                    "total_turns": self.current_task_turns,
-                    "reasoning": "Unable to determine if task should continue"
-                }}
-                break
-                
-    async def _process_turn_streaming(self, user_msg) -> AsyncGenerator[Dict[str, Any], None]:
-        messages = self._prepare_messages_for_iteration()
-        tools = self.tool_registry.list_tools()
-        tool_calls = []
+
+    def get_enabled_tools(self) -> List[str]:
+        """Return list of enabled tool names for QwenAgent."""
+        return ['read_file', 'write_file',  'edit_file', 'read_many_files',
+            'ls', 'grep', 'glob', 'bash', 'web_fetch', 'web_search', 'memory']
+
+    def _convert_single_message(self, msg: LLMMessage) -> Dict[str, Any]:
+        role = msg.role
+        data: Dict[str, Any] = {"role": role}
+        if role in ("system", "user"):
+            data["content"] = msg.content or ""
+            return data
+    
+        if role == "assistant":
+            if msg.content is not None:
+                data["content"] = msg.content
+    
+            if msg.tool_calls:
+                converted_tool_calls = []
+                for tc in msg.tool_calls:
+                    converted_tool_calls.append({
+                        "id": tc.call_id,
+                        "type": tc.type or "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.arguments or {}),
+                        },
+                    })
+                data["tool_calls"] = converted_tool_calls
+    
+            return data
+    
+        if role == "tool":
+            if not msg.tool_call_id:
+                raise ValueError("Tool message must have tool_call_id")
+            data["tool_call_id"] = msg.tool_call_id
+            data["content"] = msg.content or ""
+            return data
+    
+        raise ValueError(f"Unsupported role for OpenAI messages: {role!r}")
+ 
+    async def _process_turn_stream(self, user_message) -> AsyncGenerator[Dict[str, Any], None]:
+        self.conversation_history.append(LLMMessage(role="user", content=user_message))
+        messages = [self._convert_single_message(msg) for msg in self.conversation_history]
+        tools = [tool.build() for tool in self.tool_registry.list_tools()]
         completed_resp = {}
-        async for evt in self.llm_client.astream_response(messages= [], tools= tools, api = "chat"):
-            if evt.type == "created":
+        async for event in self.llm_client.astream_response(messages= messages, tools= tools, api = "chat"):
+            if event.type == "created":
                 yield {"type": "llm_stream_start", "data": {}}
-            elif evt.type == "output_text.delta":
-                yield {"type": "llm_chunk", "data": {"content": evt.data}}
-            elif evt.type == "tool_call.ready":
-                tool_calls = evt.data or []
-                async for tc_evt in self._process_tool_calls(tool_calls):
-                    yield tc_evt
-            elif evt.type == "completed":
-                completed_resp = evt.data
+            elif event.type == "output_text.delta":
+                yield {"type": "llm_chunk", "data": {"content": event.data}}
+            elif event.type == "tool_call.delta":
+                tc_data = event.data
+                if tc_data is None:
+                    continue
+            elif event.type == "tool_call.ready":
+                tool_calls = event.data or {}
+                """
+                for _, tc in tool_calls:
+                    assistant_msg = LLMMessage(
+                        role="assistant",
+                        tool_calls = tc
+                    )
+                    self.conversation_history.append(assistant_msg)
+                """
+                async for tc_event in self._process_tool_calls([tool_calls[i] for i in sorted(tool_calls.keys())]):
+                    yield tc_event
+            elif event.type == "completed":
+                self.current_turn_index += 1
+                completed_resp = event.data
                 if not completed_resp:
                     continue
                 if self.cli_console:
-                    self.cli_console.update_token_usage(completed_resp.get("completed",{}).usage.input_tokens)
-                yield {"type": "turn_token_usage", "data": completed_resp.get("completed",{}).usage.totol_tokens}
-                yield {"type": "turn_complete", "data": {"status": "completed"}}
+                    self.cli_console.update_token_usage(completed_resp.get("usage", {}).total_tokens)
+                yield {"type": "turn_token_usage", "data": completed_resp.get("usage", {}).total_tokens}
+                #yield {"type": "turn_complete", "data": {"status": "completed"}}
+                finish_reason = completed_resp.get("finish_reason")
+                if finish_reason and finish_reason != "tool_calls":
+                    yield {"type": "task_complete", "data": {"reason": finish_reason}}
 
-                self.conversation_history.append(LLMMessage(
-                    role="assistant",
-                    content = completed_resp.get("completed", {}).text,
-                    tool_calls = completed_resp.get("completed", {}).tool_calls
-                ))
-         
+            """
                 self.trajectory_recorder.record_llm_interaction(
                     messages=messages,
                     response= None, #TODO. completed_resp,
@@ -477,276 +438,73 @@ class QwenAgent(BaseAgent):
                     tools=tools,
                     agent_name=self.type
                 )
-
-       
+            """
 
     async def _process_tool_calls(self, tool_calls) -> AsyncGenerator[Dict[str, Any], None]:
+        tc_list = []
         for tool_call in tool_calls:
+            tool_call = ToolCall(**tool_call)
+            call_id = tool_call.call_id 
+            name = tool_call.name
+            arguments = tool_call.arguments or {}
             data = {
-                "call_id": tool_call.call_id,
-                "name": tool_call.name,
-                "arguments": tool_call.arguments
+                "call_id": call_id,
+                "name": name,
+                "arguments": arguments, 
             }
             yield {"type": "tool_call_start", "data": data}
 
             if not self.cli_console:
                 continue
-            tool = self.tool_registry.get_tool(tool_call.name)
+            tool = self.tool_registry.get_tool(name)
             if not tool:
                 continue
-            confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
+            confirmation_details = await tool.get_confirmation_details(**arguments)
             if confirmation_details:
                 confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
                 if not confirmed:
                     tool_msg = LLMMessage(
                         role="tool",
                         content="Tool execution was cancelled by user",
-                        tool_call_id=tool_call.call_id
+                        tool_call_id=call_id
                     )
                     self.conversation_history.append(tool_msg)
 
-                    yield {"type": "tool_result", "data": {
-                        "call_id": tool_call.call_id,
-                        "name": tool_call.name,
-                        "result": "Tool execution rejected by user",
-                        "success": False,
-                        "error": "Tool execution rejected by user"
-                    }}
+                    data = {"call_id": call_id, 
+                            "name": name, 
+                            "result": "Tool execution rejected by user",
+                            "success": False, 
+                            "error": "Tool execution rejected by user" }
+                    yield {"type": "tool_result", "data": data}
                     continue
+            tc_list.append(tool_call)
 
-            results = await self.tool_executor.execute_tools([tool_call], self.type)
-            result = results[0]
-            yield {"type": "tool_result", 
-                   "data": {
-                        "call_id": tool_call.call_id,
-                        "name": tool_call.name,
-                        "result": result.result,
-                        "success": result.success,
-                        "error": result.error,
-                        "arguments": tool_call.arguments
-                    }
-                }
-            #TODO.待定，貌似没有result字段，需要确认
-            if isinstance(result.result, dict):
-                content = result.result.get('summary', str(result.result)) or str(result.error)
-            else:
-                content = str(result.result) or str(result.error)
-
-            tool_msg = LLMMessage(
-                    role="tool",
-                    content=content,
-                    tool_call_id=tool_call.call_id
-            )
-            self.conversation_history.append(tool_msg)
-
-        
-    async def _process_tool_calls_streaming(self, turn: Turn, tool_calls) -> AsyncGenerator[Dict[str, Any], None]:
-        """流式处理工具调用."""
-        
-        for tool_call in tool_calls:
-            turn.add_tool_call(tool_call)
-            
-            yield {"type": "tool_call_start", "data": {
-                "call_id": tool_call.call_id,
-                "name": tool_call.name,
-                "arguments": tool_call.arguments
-            }}
-            
-            # 检查是否需要用户确认（基于工具风险等级）
-            if hasattr(self, 'cli_console') and self.cli_console:
-                tool = self.tool_registry.get_tool(tool_call.name)
-                if tool:
-                    confirmation_details = await tool.get_confirmation_details(**tool_call.arguments)
-                    if confirmation_details:
-                        #TODO，从console剥离
-                        confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
-                        if not confirmed:
-                                # 用户拒绝，跳过这个工具
-                                # Create cancelled tool result message and add to conversation history
-                                tool_msg = LLMMessage(
-                                    role="tool",
-                                    content="Tool execution was cancelled by user",
-                                    tool_call_id=tool_call.call_id
-                                )
-                                self.conversation_history.append(tool_msg)
-
-                                yield {"type": "tool_result", "data": {
-                                    "call_id": tool_call.call_id,
-                                    "name": tool_call.name,
-                                    "result": "Tool execution rejected by user",
-                                    "success": False,
-                                    "error": "Tool execution rejected by user"
-                                }}
-                                continue
-            
-            try:
-                if self.hook_mgr:
-                    pre_ok, pre_msg, _ = await self.hook_mgr.emit(
-                        HookEvent.PreToolUse,
-                        base_payload={
-                            "session_id": getattr(self.config, "session_id", ""),
-                        },
-                        tool_name=tool_call.name,
-                        tool_input=dict(tool_call.arguments or {}),
-                    )
-                    if pre_msg and self.cli_console:
-                        self.cli_console.print(pre_msg, "yellow")
-                    if not pre_ok:
-                        blocked_reason = pre_msg or "Tool call blocked by PreToolUse hook"
-                        yield {"type": "tool_result", "data": {
-                            "call_id": tool_call.call_id,
-                            "name": tool_call.name,
-                            "result": blocked_reason,
-                            "success": False,
-                            "error": blocked_reason,
-                            "arguments": tool_call.arguments
-                        }}
-                        self.conversation_history.append(LLMMessage(
-                            role="tool",
-                            content=blocked_reason,
-                            tool_call_id=tool_call.call_id
-                        ))
-                        continue
-
-                results = await self.tool_executor.execute_tools([tool_call], self.type)
-                result = results[0]
-
-                yield {"type": "tool_result", "data": {
-                    "call_id": tool_call.call_id,
-                    "name": tool_call.name,
-                    "result": result.result,
-                    "success": result.success,
-                    "error": result.error,
-                    "arguments": tool_call.arguments
-                }}
-
-                turn.add_tool_result(result)
-                
-                # 添加到对话历史
-                if isinstance(result.result, dict):
-                    content = result.result.get('summary', str(result.result)) or str(result.error)
-                else:
-                    content = str(result.result) or str(result.error)
-
-                tool_msg = LLMMessage(
-                    role="tool",
-                    content=content,
-                    tool_call_id=tool_call.call_id
-                )
-                self.conversation_history.append(tool_msg)
-
-                if self.hook_mgr:
-                    post_ok, post_msg, post_extra = await self.hook_mgr.emit(
-                        HookEvent.PostToolUse,
-                        base_payload={
-                            "session_id": getattr(self.config, "session_id", ""),
-                            "cwd": str(Path.cwd()),
-                        },
-                        tool_name=tool_call.name,
-                        tool_input=dict(tool_call.arguments or {}),
-                        tool_response={
-                            "result": result.result,
-                            "success": result.success,
-                            "error": result.error,
-                        },
-                    )
-                    if post_msg and self.cli_console:
-                        self.cli_console.print(post_msg, "yellow")
-                    if not post_ok:
-                        blocked_reason = post_msg or "PostToolUse hook blocked further processing"
-                        yield {"type": "tool_error", "data": {
-                            "call_id": tool_call.call_id,
-                            "name": tool_call.name,
-                            "error": blocked_reason
-                        }}
-                    if post_extra.get("additionalContext"):
-                        self.conversation_history.append(LLMMessage(
-                            role="system",
-                            content=post_extra["additionalContext"]
-                        ))
-                
-            except Exception as e:
-                error_msg = f"Tool execution failed: {str(e)}"
-                yield {"type": "tool_error", "data": {
-                    "call_id": tool_call.call_id,
-                    "name": tool_call.name,
-                    "error": error_msg
-                }}
-                
-                # 添加错误结果到对话历史
-                tool_msg = LLMMessage(
-                    role="tool",
-                    content=error_msg,
-                    tool_call_id=tool_call.call_id
-                )
-                self.conversation_history.append(tool_msg)
-
-    async def _check_task_continuation_streaming(self, completed_turn: Turn) -> Optional[TaskContinuationResponse]:
-        """Check task continuation in streaming mode with logging."""
-        
-        # 获取最后的assistant response
-        last_assistant_response = None
-        if completed_turn.llm_responses:
-            last_assistant_response = completed_turn.llm_responses[-1]
-        elif completed_turn.assistant_messages:
-            # 如果没有llm_responses，从assistant_messages获取最后一条
-            last_response_content = completed_turn.assistant_messages[-1]
-        else:
-            return None
-        
-        # 获取响应内容
-        if last_assistant_response:
-            last_response_content = last_assistant_response.content
-        elif not completed_turn.assistant_messages:
-            return None
-        else:
-            last_response_content = completed_turn.assistant_messages[-1]
-        
-        if not last_response_content:
-            return None
-            
-        max_turns_reached = self.current_task_turns >= self.max_task_turns
-        
-        # 使用LLM-based checker
-        continuation_check = await self.task_continuation_checker.check_task_continuation(
-            original_task=self.original_user_task,
-            last_response=last_response_content,
-            conversation_history=self.conversation_history,
-            max_turns_reached=max_turns_reached
-        )
-        
-        # 记录continuation check的LLM调用到trajectory
-        if continuation_check and hasattr(self.task_continuation_checker, 'last_llm_response'):
-            self.trajectory_recorder.record_llm_interaction(
-                messages=self.task_continuation_checker.last_messages,
-                response=self.task_continuation_checker.last_llm_response,
-                provider=self.config.model_config.provider.value,
-                model=self.config.model_config.model,
-                tools=None
-            )
-            
-            # 更新token统计到当前turn
-            if self.task_continuation_checker.last_llm_response.usage:
-                usage = self.task_continuation_checker.last_llm_response.usage
-                if hasattr(usage, 'total_tokens'):
-                    completed_turn.total_tokens += usage.total_tokens
-                elif hasattr(usage, 'input_tokens') and hasattr(usage, 'output_tokens'):
-                    completed_turn.total_tokens += usage.input_tokens + usage.output_tokens
-        
-        return continuation_check
-
-    def _prepare_messages_for_iteration(self) -> List[LLMMessage]:
-        """Prepare messages for current iteration."""
-        messages = []
-        cwd_prompte_template = """  
-        Please note that the user launched Pywen under the path {}. 
-        All subsequent file-creation, file-writing, file-reading, and similar operations should be performed within this directory.
+        results = await self.tool_executor.execute_tools(tc_list, self.type)
         """
-        cwd_prompt = cwd_prompte_template.format(Path.cwd())  # 有待商榷
-        system_prompt = self.system_prompt + "\n" + cwd_prompt
-        messages.append(LLMMessage(role="system", content=system_prompt))
-        messages.extend(self.conversation_history)
-        return messages
+        for idx, res in enumerate(results):
+            data = { 
+                    "call_id": tc_list[idx].call_id, 
+                    "name": tc_list[idx].name, 
+                    "result": res.result,
+                    "success": res.success, 
+                    "error": res.error,  
+                    "arguments": tc_list[idx].arguments
+                    }
+            yield {"type": "tool_result", "data": data}
+            content = str(res.result) or str(res.error)
+            tool_msg = LLMMessage(role="tool", content=content, tool_call_id= tc_list[idx].call_id)
+            self.conversation_history.append(tool_msg)
+        """
+
+    def _update_system_prompt(self, system_prompt: str, history:List[LLMMessage]) -> List[LLMMessage]:
+        cwd_prompt = (
+            f"Please note that the user launched Pywen under the path {Path.cwd()}.\n"
+            "All subsequent file-creation, file-writing, file-reading, and similar "
+            "operations should be performed within this directory."
+        )
+        prompt = system_prompt.rstrip() + "\n\n" + cwd_prompt
+        system_message = LLMMessage(role="system", content= prompt)
+        return [system_message, *history]
 
     def _build_system_prompt(self) -> str:
         """Build system prompt with tool descriptions."""

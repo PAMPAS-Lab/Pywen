@@ -90,10 +90,17 @@ class BaseTool(ABC):
             "parameters": self.parameter_schema
         }
 
+    #TODO. 重构完成后需要声明为 abstractmethod
     def build(self) -> Mapping[str, Any]:
         """Build tool instance. To be implemented by subclasses."""
-        raise NotImplementedError("Subclasses must implement build method.")
-
+        return {
+                "type": "function",
+                "function": {
+                    "name": self.name,
+                    "description": self.description,
+                    "parameters": self.parameter_schema
+                },
+            }
 
 # Alias for backward compatibility
 Tool = BaseTool

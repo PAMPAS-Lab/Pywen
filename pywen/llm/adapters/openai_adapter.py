@@ -319,26 +319,24 @@ class OpenAIAdapter():
         tool_calls: dict[int, dict] = {}
         text_buffer: str = ""
         async for chunk in stream:
+            print(chunk)
             delta = chunk.choices[0].delta
-            if delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    if tc_delta.type not in ("function", "custom"):
-                        continue
-                    idx = tc_delta.index
-                    data = tool_calls.setdefault(
-                        idx, 
-                        {"id": tc_delta.id, "name": None, "arguments": "", "type": tc_delta.type or "custom"}
-                    )
-                    data["id"] = tc_delta.id
-                    data["name"] = tc_delta.function.name or data["name"]
-                    data["arguments"] += tc_delta.function.arguments or ""
-                    data["type"] = tc_delta.type or data["type"]
-                    yield ResponseEvent.tool_call_delta(
-                        call_id = data["id"] or "",
-                        name = data["name"],
-                        arguments = data["arguments"],
-                        type = data["type"] or "custom",
-                    )
+            for tc_delta in delta.tool_calls or []:
+                if tc_delta.type not in ("function", "custom"):
+                    continue
+                idx = tc_delta.index
+                data = tool_calls.setdefault(
+                    idx, 
+                    {"call_id": tc_delta.id, "name": None, "arguments": "", "type": tc_delta.type or "custom"}
+                )
+                call_id = tc_delta.id
+                name = tc_delta.function.name if tc_delta.function else data["name"]
+                args = tc_delta.function.arguments  if tc_delta.function else data["arguments"]
+                data["call_id"] =  call_id  or data["call_id"]
+                data["name"] = name or data["name"]
+                data["arguments"] += args
+                data["type"] = tc_delta.type or data["type"]
+                yield ResponseEvent.tool_call_delta(data["call_id"], data["name"], args or "", data["type"])
 
             if delta.content is not None:
                 text_buffer += delta.content
@@ -347,6 +345,10 @@ class OpenAIAdapter():
             finish_reason = chunk.choices[0].finish_reason
             if finish_reason is not None:
                 if finish_reason == "tool_calls" and tool_calls:
+                    tool_calls = {
+                        idx: {**call, "arguments": json.loads(call["arguments"])}
+                        for idx, call in tool_calls.items()
+                    }
                     yield ResponseEvent.tool_call_ready(tool_calls)
                 payload = {
                     "text": text_buffer,
@@ -355,4 +357,3 @@ class OpenAIAdapter():
                     "usage": chunk.usage,
                 }
                 yield ResponseEvent.completed(payload)
-
