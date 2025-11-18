@@ -32,11 +32,22 @@ def _tool_feedback_to_tool_result_block(payload: Dict[str, Any]) -> Dict[str, An
         ],
     }
 
-def _to_chat_messages(messages: List[Dict[str, str]]) -> List[ChatCompletionMessageParam]:
-    return cast(
-        List[ChatCompletionMessageParam],
-        [{"role": m["role"], "content": m["content"]} for m in messages]
-    )
+def _to_chat_messages(messages: List[Dict[str, Any]]) -> List[ChatCompletionMessageParam]:
+    converted: List[ChatCompletionMessageParam] = []
+    for msg in messages:
+        role = msg.get("role")
+        item: Dict[str, Any] = {"role": role}
+        if "content" in msg:
+            item["content"] = msg["content"]
+        if role == "assistant" and "tool_calls" in msg:
+            item["tool_calls"] = msg["tool_calls"]
+        if role == "tool" and "tool_call_id" in msg:
+            item["tool_call_id"] = msg["tool_call_id"]
+        if "name" in msg:
+            item["name"] = msg["name"]
+        converted.append(cast(ChatCompletionMessageParam, item))
+
+    return converted
 
 def _to_responses_input(messages: List[Dict[str, str]]) -> ResponseInputParam:
     """为了统一，不允许简单的字符串输入，必须是带 role 的消息列表"""
@@ -321,30 +332,33 @@ class OpenAIAdapter():
         async for chunk in stream:
             delta = chunk.choices[0].delta
             for tc_delta in delta.tool_calls or []:
-                if tc_delta.type not in ("function", "custom"):
-                    continue
                 idx = tc_delta.index
                 data = tool_calls.setdefault(
                     idx, 
-                    {"call_id": tc_delta.id, "name": None, "arguments": "", "type": tc_delta.type or "custom"}
+                    {"call_id": "", "name": "", "arguments": "", "type": ""}
                 )
-                data["type"] = tc_delta.type
-                if tc_delta.id is not None:
-                    data["call_id"] = tc_delta.id
-                if tc_delta.function is not None:
+                data["type"] = tc_delta.type or data["type"]
+                data["call_id"] = tc_delta.id or data["call_id"]
+                if tc_delta.function:
                     data["name"] = tc_delta.function.name or data["name"]
                     data["arguments"] += tc_delta.function.arguments 
                     yield ResponseEvent.tool_call_delta(data["call_id"], data["name"], tc_delta.function.arguments  or "", data["type"])
 
             if delta.content:
                 text_buffer += delta.content
-                yield ResponseEvent.text_delta(delta.content)
+                yield ResponseEvent.text_delta(delta.content or "")
 
             finish_reason = chunk.choices[0].finish_reason
             payload = {"text": text_buffer, "finish_reason": finish_reason, "usage": chunk.usage}
             if finish_reason == "tool_calls":
                 # tool_call中包含call_id, name, arguments, type
-                [**tol_calls.values(), "arguments":tc["arguments"] for tc in tool_calls.values()]
+                for tc in tool_calls.values():
+                    try:
+                        tc["arguments"] = json.loads(tc["arguments"])
+                    except json.JSONDecodeError:
+                        tc["arguments"] = {}
+                    except TypeError:
+                        tc["arguments"] = {}
                 payload["tool_calls"] = list(tool_calls.values())
                 yield ResponseEvent.tool_call_ready(list(tool_calls.values()))
 

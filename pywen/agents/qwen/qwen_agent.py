@@ -320,6 +320,7 @@ class QwenAgent(BaseAgent):
             wire_api="chat",
         )
         self.llm_client = LLMClient(self.llmconfig)
+        self.turn_history: List[LLMMessage] = []
     
     async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
         """Run agent with streaming output and task continuation."""
@@ -342,8 +343,8 @@ class QwenAgent(BaseAgent):
         )
         yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_turn_index}}
 
-        self.conversation_history = self._update_system_prompt(self.system_prompt)
-        self.conversation_history.append(LLMMessage(role="user", content=user_message))
+        self.turn_history = self._update_system_prompt(self.system_prompt)
+        self.turn_history.append(LLMMessage(role="user", content=user_message))
 
         while self.current_turn_index < self.max_task_turns:
             #data = {"message": user_message, "turn": self.current_turn_index, "reason": "Continuing task based on LLM decision" }
@@ -366,7 +367,6 @@ class QwenAgent(BaseAgent):
         if role == "assistant":
             if msg.content is not None:
                 data["content"] = msg.content
-    
             if msg.tool_calls:
                 converted_tool_calls = []
                 for tc in msg.tool_calls:
@@ -379,21 +379,19 @@ class QwenAgent(BaseAgent):
                         },
                     })
                 data["tool_calls"] = converted_tool_calls
-    
-            return data
-    
+                return data
+
         if role == "tool":
             if not msg.tool_call_id:
                 raise ValueError("Tool message must have tool_call_id")
             data["tool_call_id"] = msg.tool_call_id
-            data["content"] = msg.content or ""
+            data["content"] = msg.content
             return data
     
         raise ValueError(f"Unsupported role for OpenAI messages: {role!r}")
  
     async def _process_turn_stream(self) -> AsyncGenerator[Dict[str, Any], None]:
-        messages = [self._convert_single_message(msg) for msg in self.conversation_history]
-        print("DEBUG: Sending messages to LLM:", messages)
+        messages = [self._convert_single_message(msg) for msg in self.turn_history]
         tools = [tool.build() for tool in self.tool_registry.list_tools()]
         completed_resp = {}
         async for event in self.llm_client.astream_response(messages= messages, tools= tools, api = "chat"):
@@ -412,9 +410,10 @@ class QwenAgent(BaseAgent):
                 tc_list = [ToolCall.from_raw(tc) for tc in tool_calls]
                 assistant_msg = LLMMessage(
                     role="assistant",
-                    tool_calls = tc_list
+                    tool_calls = tc_list,
+                    content = "",
                 )
-                self.conversation_history.append(assistant_msg)
+                self.turn_history.append(assistant_msg)
                 # 2. 执行工具调用，拿到结果，填充tool LLMMessage
                 async for tc_event in self._process_tool_calls(tc_list):
                     yield tc_event
@@ -460,7 +459,7 @@ class QwenAgent(BaseAgent):
                         content="Tool execution was cancelled by user",
                         tool_call_id=tc.call_id
                     )
-                    self.conversation_history.append(tool_msg)
+                    self.turn_history.append(tool_msg)
 
                     data = {"call_id": tc.call_id, 
                             "name": tc.name, 
@@ -482,10 +481,8 @@ class QwenAgent(BaseAgent):
                     "arguments": tc.arguments
                     }
             yield {"type": "tool_result", "data": data}
-
-            content = str(res.result) or str(res.error)
-            tool_msg = LLMMessage(role="tool", content=content, tool_call_id= tc.call_id)
-            self.conversation_history.append(tool_msg)
+            tool_msg = LLMMessage(role="tool", content= res.result, tool_call_id=tc.call_id)
+            self.turn_history.append(tool_msg)
 
     def _update_system_prompt(self, system_prompt: str) -> List[LLMMessage]:
         cwd_prompt = (
