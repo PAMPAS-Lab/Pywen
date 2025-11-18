@@ -1,8 +1,7 @@
 """Qwen Agent implementation with streaming logic."""
 import os,subprocess, json
 from pathlib import Path
-from typing import Dict, List, Optional, Any, AsyncGenerator
-from types import  SimpleNamespace
+from typing import Dict, List, Any, AsyncGenerator
 from pywen.agents.base_agent import BaseAgent
 from pywen.utils.llm_basics import LLMMessage
 from pywen.llm.llm_client import LLMClient, LLMConfig 
@@ -342,12 +341,14 @@ class QwenAgent(BaseAgent):
             max_steps=self.max_iterations
         )
         yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_turn_index}}
-        self.conversation_history = self._update_system_prompt(self.system_prompt, self.conversation_history)
+
+        self.conversation_history = self._update_system_prompt(self.system_prompt)
+        self.conversation_history.append(LLMMessage(role="user", content=user_message))
 
         while self.current_turn_index < self.max_task_turns:
             #data = {"message": user_message, "turn": self.current_turn_index, "reason": "Continuing task based on LLM decision" }
             #yield {"type": "task_continuation", "data": data}
-            async for event in self._process_turn_stream(user_message):
+            async for event in self._process_turn_stream():
                 yield event
 
     def get_enabled_tools(self) -> List[str]:
@@ -390,9 +391,9 @@ class QwenAgent(BaseAgent):
     
         raise ValueError(f"Unsupported role for OpenAI messages: {role!r}")
  
-    async def _process_turn_stream(self, user_message) -> AsyncGenerator[Dict[str, Any], None]:
-        self.conversation_history.append(LLMMessage(role="user", content=user_message))
+    async def _process_turn_stream(self) -> AsyncGenerator[Dict[str, Any], None]:
         messages = [self._convert_single_message(msg) for msg in self.conversation_history]
+        print("DEBUG: Sending messages to LLM:", messages)
         tools = [tool.build() for tool in self.tool_registry.list_tools()]
         completed_resp = {}
         async for event in self.llm_client.astream_response(messages= messages, tools= tools, api = "chat"):
@@ -405,26 +406,30 @@ class QwenAgent(BaseAgent):
                 if tc_data is None:
                     continue
             elif event.type == "tool_call.ready":
+                # 返回内容是tool_calls 字典列表
+                # 1. 填充assistant LLMMessage
                 tool_calls = event.data or {}
-                """
-                for _, tc in tool_calls:
-                    assistant_msg = LLMMessage(
-                        role="assistant",
-                        tool_calls = tc
-                    )
-                    self.conversation_history.append(assistant_msg)
-                """
-                async for tc_event in self._process_tool_calls([tool_calls[i] for i in sorted(tool_calls.keys())]):
+                tc_list = [ToolCall.from_raw(tc) for tc in tool_calls]
+                assistant_msg = LLMMessage(
+                    role="assistant",
+                    tool_calls = tc_list
+                )
+                self.conversation_history.append(assistant_msg)
+                # 2. 执行工具调用，拿到结果，填充tool LLMMessage
+                async for tc_event in self._process_tool_calls(tc_list):
                     yield tc_event
             elif event.type == "completed":
                 self.current_turn_index += 1
                 completed_resp = event.data
                 if not completed_resp:
                     continue
-                if self.cli_console:
-                    self.cli_console.update_token_usage(completed_resp.get("usage", {}).total_tokens)
-                yield {"type": "turn_token_usage", "data": completed_resp.get("usage", {}).total_tokens}
-                #yield {"type": "turn_complete", "data": {"status": "completed"}}
+                # 更新 token 使用统计
+                usage = completed_resp.get("usage", {})
+                if usage and usage.total_tokens:
+                    if self.cli_console:
+                        self.cli_console.update_token_usage(completed_resp.get("usage", {}).total_tokens)
+                    yield {"type": "turn_token_usage", "data": completed_resp.get("usage", {}).total_tokens}
+                # 处理结束状态
                 finish_reason = completed_resp.get("finish_reason")
                 if finish_reason and finish_reason != "tool_calls":
                     yield {"type": "task_complete", "data": {"reason": finish_reason}}
@@ -440,63 +445,49 @@ class QwenAgent(BaseAgent):
                 )
             """
 
-    async def _process_tool_calls(self, tool_calls) -> AsyncGenerator[Dict[str, Any], None]:
-        tc_list = []
-        for tool_call in tool_calls:
-            tool_call = ToolCall(**tool_call)
-            call_id = tool_call.call_id 
-            name = tool_call.name
-            arguments = tool_call.arguments or {}
-            data = {
-                "call_id": call_id,
-                "name": name,
-                "arguments": arguments, 
-            }
-            yield {"type": "tool_call_start", "data": data}
-
-            if not self.cli_console:
-                continue
-            tool = self.tool_registry.get_tool(name)
+    async def _process_tool_calls(self, tool_calls : List[ToolCall]) -> AsyncGenerator[Dict[str, Any], None]:
+        # 2. 执行工具调用，拿到结果，填充tool LLMMessage
+        for tc in tool_calls:
+            tool = self.tool_registry.get_tool(tc.name)
             if not tool:
                 continue
-            confirmation_details = await tool.get_confirmation_details(**arguments)
-            if confirmation_details:
-                confirmed = await self.cli_console.confirm_tool_call(tool_call, tool)
+            confirmation_details = await tool.get_confirmation_details(name = tc.name, args = tc.arguments)
+            if confirmation_details and self.cli_console:
+                confirmed = await self.cli_console.confirm_tool_call(tc, tool)
                 if not confirmed:
                     tool_msg = LLMMessage(
                         role="tool",
                         content="Tool execution was cancelled by user",
-                        tool_call_id=call_id
+                        tool_call_id=tc.call_id
                     )
                     self.conversation_history.append(tool_msg)
 
-                    data = {"call_id": call_id, 
-                            "name": name, 
+                    data = {"call_id": tc.call_id, 
+                            "name": tc.name, 
                             "result": "Tool execution rejected by user",
                             "success": False, 
                             "error": "Tool execution rejected by user" }
                     yield {"type": "tool_result", "data": data}
                     continue
-            tc_list.append(tool_call)
 
-        results = await self.tool_executor.execute_tools(tc_list, self.type)
-        """
-        for idx, res in enumerate(results):
+            #实际上这里是单个执行
+            results = await self.tool_executor.execute_tools([tc], self.type)
+            res= results[0]
             data = { 
-                    "call_id": tc_list[idx].call_id, 
-                    "name": tc_list[idx].name, 
+                    "call_id": tc.call_id, 
+                    "name": tc.name, 
                     "result": res.result,
                     "success": res.success, 
                     "error": res.error,  
-                    "arguments": tc_list[idx].arguments
+                    "arguments": tc.arguments
                     }
             yield {"type": "tool_result", "data": data}
-            content = str(res.result) or str(res.error)
-            tool_msg = LLMMessage(role="tool", content=content, tool_call_id= tc_list[idx].call_id)
-            self.conversation_history.append(tool_msg)
-        """
 
-    def _update_system_prompt(self, system_prompt: str, history:List[LLMMessage]) -> List[LLMMessage]:
+            content = str(res.result) or str(res.error)
+            tool_msg = LLMMessage(role="tool", content=content, tool_call_id= tc.call_id)
+            self.conversation_history.append(tool_msg)
+
+    def _update_system_prompt(self, system_prompt: str) -> List[LLMMessage]:
         cwd_prompt = (
             f"Please note that the user launched Pywen under the path {Path.cwd()}.\n"
             "All subsequent file-creation, file-writing, file-reading, and similar "
@@ -504,7 +495,7 @@ class QwenAgent(BaseAgent):
         )
         prompt = system_prompt.rstrip() + "\n\n" + cwd_prompt
         system_message = LLMMessage(role="system", content= prompt)
-        return [system_message, *history]
+        return [system_message]
 
     def _build_system_prompt(self) -> str:
         """Build system prompt with tool descriptions."""

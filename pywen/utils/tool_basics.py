@@ -24,6 +24,20 @@ class ToolCall:
             "input": self.input
         }
 
+    @classmethod
+    def from_raw(cls, data: dict):
+        import json
+        args = data.get("arguments", "")
+        if isinstance(args, str):
+            args = json.loads(args) if args.strip() else {}
+        return cls(
+            call_id=data["call_id"],
+            name=data["name"],
+            arguments=args,
+            type=data.get("type"),
+            input=data.get("input", "")
+        )
+
 class ToolStatus(Enum):
     """Tool execution status."""
     SUCCESS = "success"

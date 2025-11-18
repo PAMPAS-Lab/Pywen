@@ -319,7 +319,6 @@ class OpenAIAdapter():
         tool_calls: dict[int, dict] = {}
         text_buffer: str = ""
         async for chunk in stream:
-            print(chunk)
             delta = chunk.choices[0].delta
             for tc_delta in delta.tool_calls or []:
                 if tc_delta.type not in ("function", "custom"):
@@ -329,31 +328,26 @@ class OpenAIAdapter():
                     idx, 
                     {"call_id": tc_delta.id, "name": None, "arguments": "", "type": tc_delta.type or "custom"}
                 )
-                call_id = tc_delta.id
-                name = tc_delta.function.name if tc_delta.function else data["name"]
-                args = tc_delta.function.arguments  if tc_delta.function else data["arguments"]
-                data["call_id"] =  call_id  or data["call_id"]
-                data["name"] = name or data["name"]
-                data["arguments"] += args
-                data["type"] = tc_delta.type or data["type"]
-                yield ResponseEvent.tool_call_delta(data["call_id"], data["name"], args or "", data["type"])
+                data["type"] = tc_delta.type
+                if tc_delta.id is not None:
+                    data["call_id"] = tc_delta.id
+                if tc_delta.function is not None:
+                    data["name"] = tc_delta.function.name or data["name"]
+                    data["arguments"] += tc_delta.function.arguments 
+                    yield ResponseEvent.tool_call_delta(data["call_id"], data["name"], tc_delta.function.arguments  or "", data["type"])
 
-            if delta.content is not None:
+            if delta.content:
                 text_buffer += delta.content
                 yield ResponseEvent.text_delta(delta.content)
 
             finish_reason = chunk.choices[0].finish_reason
+            payload = {"text": text_buffer, "finish_reason": finish_reason, "usage": chunk.usage}
+            if finish_reason == "tool_calls":
+                # tool_call中包含call_id, name, arguments, type
+                [**tol_calls.values(), "arguments":tc["arguments"] for tc in tool_calls.values()]
+                payload["tool_calls"] = list(tool_calls.values())
+                yield ResponseEvent.tool_call_ready(list(tool_calls.values()))
+
             if finish_reason is not None:
-                if finish_reason == "tool_calls" and tool_calls:
-                    tool_calls = {
-                        idx: {**call, "arguments": json.loads(call["arguments"])}
-                        for idx, call in tool_calls.items()
-                    }
-                    yield ResponseEvent.tool_call_ready(tool_calls)
-                payload = {
-                    "text": text_buffer,
-                    "finish_reason": finish_reason,
-                    "tool_calls": tool_calls,
-                    "usage": chunk.usage,
-                }
+                # 包含tool_calls信息, tool_call中包含call_id, name, arguments, type
                 yield ResponseEvent.completed(payload)
