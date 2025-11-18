@@ -479,7 +479,8 @@ class QwenAgent(BaseAgent):
                     "arguments": tc.arguments
                     }
             yield {"type": "tool_result", "data": data}
-            tool_msg = LLMMessage(role="tool", content= res.result, tool_call_id=tc.call_id)
+            content = res.result if isinstance(res.success, str) else json.dumps(res.result)
+            tool_msg = LLMMessage(role="tool", content= content, tool_call_id=tc.call_id)
             self.conversation_history.append(tool_msg)
 
     def _update_system_prompt(self, system_prompt: str) -> List[LLMMessage]:
