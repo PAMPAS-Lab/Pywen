@@ -34,3 +34,25 @@ class LLMResponse:
     usage: Optional[LLMUsage] = None
     model: Optional[str] = None
     finish_reason: Optional[str] = None
+
+    @classmethod
+    def from_raw(cls, data: dict):
+        """Create LLMResponse from raw dictionary."""
+        usage = None
+        tc = None
+        if "usage" in data and data["usage"]:
+            usage = LLMUsage(
+                input_tokens=data["usage"].get("input_tokens", 0),
+                output_tokens=data["usage"].get("output_tokens", 0),
+                total_tokens=data["usage"].get("total_tokens", 0)
+            )
+        if "tool_calls" in data and data["tool_calls"]:
+            tc = [ToolCall.from_raw(tc) for tc in data["tool_calls"]]
+
+        return cls(
+            content=data.get("content", ""),
+            tool_calls= tc, 
+            usage=usage,
+            model=data.get("model", None),
+            finish_reason=data.get("finish_reason")
+        )

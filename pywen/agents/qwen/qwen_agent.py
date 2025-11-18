@@ -392,8 +392,9 @@ class QwenAgent(BaseAgent):
  
     async def _process_turn_stream(self) -> AsyncGenerator[Dict[str, Any], None]:
         messages = [self._convert_single_message(msg) for msg in self.turn_history]
+        trajectory_msg = self.turn_history.copy()
         tools = [tool.build() for tool in self.tool_registry.list_tools()]
-        completed_resp = {}
+        completed_resp : LLMResponse = LLMResponse(content = "")
         async for event in self.llm_client.astream_response(messages= messages, tools= tools, api = "chat"):
             if event.type == "created":
                 yield {"type": "llm_stream_start", "data": {}}
@@ -419,30 +420,28 @@ class QwenAgent(BaseAgent):
                     yield tc_event
             elif event.type == "completed":
                 self.current_turn_index += 1
-                completed_resp = event.data
-                if not completed_resp:
+                if not event.data:
                     continue
                 # 更新 token 使用统计
-                usage = completed_resp.get("usage", {})
+                usage = event.data.get("usage", {})
                 if usage and usage.total_tokens:
                     if self.cli_console:
-                        self.cli_console.update_token_usage(completed_resp.get("usage", {}).total_tokens)
-                    yield {"type": "turn_token_usage", "data": completed_resp.get("usage", {}).total_tokens}
+                        self.cli_console.update_token_usage(event.data.get("usage", {}).total_tokens)
+                    yield {"type": "turn_token_usage", "data": event.data.get("usage", {}).total_tokens}
                 # 处理结束状态
-                finish_reason = completed_resp.get("finish_reason")
-                if finish_reason and finish_reason != "tool_calls":
-                    yield {"type": "task_complete", "data": {"reason": finish_reason}}
-
-            """
+                finish_reason = event.data.get("finish_reason")
+                completed_resp = LLMResponse.from_raw(event.data or {})
                 self.trajectory_recorder.record_llm_interaction(
-                    messages=messages,
-                    response= None, #TODO. completed_resp,
+                    messages= trajectory_msg,
+                    response= completed_resp, 
                     provider=self.config.model_config.provider.value,
                     model=self.config.model_config.model or "",
                     tools=tools,
-                    agent_name=self.type
+                    agent_name=self.type,
                 )
-            """
+
+                if finish_reason and finish_reason != "tool_calls":
+                    yield {"type": "task_complete", "data": {"reason": finish_reason}}
 
     async def _process_tool_calls(self, tool_calls : List[ToolCall]) -> AsyncGenerator[Dict[str, Any], None]:
         # 2. 执行工具调用，拿到结果，填充tool LLMMessage
