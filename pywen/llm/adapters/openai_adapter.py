@@ -349,7 +349,7 @@ class OpenAIAdapter():
                 yield ResponseEvent.text_delta(delta.content or "")
 
             finish_reason = chunk.choices[0].finish_reason
-            payload = {"content": text_buffer, "finish_reason": finish_reason, "usage": chunk.usage}
+            payload = {"content": text_buffer, "finish_reason": finish_reason, "usage": chunk.usage or {}}
             if finish_reason == "tool_calls":
                 # tool_call中包含call_id, name, arguments, type
                 for tc in tool_calls.values():

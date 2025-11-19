@@ -153,7 +153,6 @@ class CodexShellTool(BaseTool):
             return ToolResult(call_id="", error=f"Shell execution error: {e}")
 
     def build(self) -> Mapping[str, Any]:
-        print(type(self.parameter_schema))
         return {
             "type": "function",
             "name": self.name,

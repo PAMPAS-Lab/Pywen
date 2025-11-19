@@ -41,10 +41,11 @@ class LLMResponse:
         usage = None
         tc = None
         if "usage" in data and data["usage"]:
+            tk = data["usage"].model_dump() if hasattr(data["usage"], "model_dump") else data["usage"]
             usage = LLMUsage(
-                input_tokens=data["usage"].get("input_tokens", 0),
-                output_tokens=data["usage"].get("output_tokens", 0),
-                total_tokens=data["usage"].get("total_tokens", 0)
+                input_tokens = tk.get("input_tokens", 0),
+                output_tokens = tk.get("output_tokens", 0),
+                total_tokens = tk.get("total_tokens", 0)
             )
         if "tool_calls" in data and data["tool_calls"]:
             tc = [ToolCall.from_raw(tc) for tc in data["tool_calls"]]

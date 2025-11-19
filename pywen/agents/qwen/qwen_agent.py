@@ -425,8 +425,8 @@ class QwenAgent(BaseAgent):
                 usage = event.data.get("usage", {})
                 if usage and usage.total_tokens:
                     if self.cli_console:
-                        self.cli_console.update_token_usage(event.data.get("usage", {}).total_tokens)
-                    yield {"type": "turn_token_usage", "data": event.data.get("usage", {}).total_tokens}
+                        self.cli_console.update_token_usage(usage.total_tokens)
+                    yield {"type": "turn_token_usage", "data": usage.total_tokens}
                 # 处理结束状态
                 finish_reason = event.data.get("finish_reason")
                 completed_resp = LLMResponse.from_raw(event.data or {})
