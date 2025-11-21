@@ -3,7 +3,7 @@ import os
 import json
 from dataclasses import dataclass 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, override,Mapping, Literal
+from typing import Any, Dict, List, Optional, Tuple, override,Mapping 
 from pywen.tools.base import BaseTool, ToolRiskLevel
 from pywen.utils.tool_basics import ToolResult
 
@@ -462,7 +462,7 @@ def _apply_replacements(original_lines: List[str], reps: List[Tuple[int, int, Li
 
 class ApplyPatchTool(BaseTool):
     def __init__(self, config: Optional[Any] = None):
-        self.mode = "custom" if config and "codex" in config.model_config.model.lower() else "function"
+        self.mode = "custom" if config and "codex" in config.active_model.model.lower() else "function"
         super().__init__(
             name="apply_patch",
             display_name="Apply Patch",

@@ -4,10 +4,10 @@ from pathlib import Path
 from typing import Dict, List, Any, AsyncGenerator
 from pywen.agents.base_agent import BaseAgent
 from pywen.utils.llm_basics import LLMMessage
-from pywen.llm.llm_client import LLMClient, LLMConfig 
+from pywen.llm.llm_client import LLMClient
 from pywen.agents.qwen.task_continuation_checker import TaskContinuationChecker, TaskContinuationResponse
 from pywen.agents.qwen.loop_detection_service import AgentLoopDetectionService
-from pywen.utils.token_limits import TokenLimits, ModelProvider
+from pywen.config.token_limits import TokenLimits
 from pywen.core.session_stats import session_stats
 from pywen.hooks.models import HookEvent
 from pywen.utils.llm_basics import LLMResponse, ToolCall
@@ -306,27 +306,18 @@ class QwenAgent(BaseAgent):
         self.max_task_turns = getattr(config, 'max_task_turns', 5)
         self.current_turn_index = 0
         self.original_user_task = ""
-        self.max_iterations = config.max_iterations
+        self.max_turns = config.max_turns
         self.loop_detector = AgentLoopDetectionService()
         #self.task_continuation_checker = TaskContinuationChecker(self.llm_client)
         self.system_prompt = self.get_core_system_prompt()
-        self.file_metrics = dict()
-        self.llmconfig = LLMConfig(
-            provider=config.model_config.provider.value,
-            api_key=config.model_config.api_key,
-            base_url=config.model_config.base_url,
-            model= config.model_config.model or "",
-            turn_cnt_max = self.max_task_turns,
-            wire_api="chat",
-        )
-        self.llm_client = LLMClient(self.llmconfig)
+        self.llm_client = LLMClient(config.active_model)
         self.conversation_history = self._update_system_prompt(self.system_prompt)
     
     async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
         """Run agent with streaming output and task continuation."""
         await self.setup_tools_mcp()
-        model_name = self.config.model_config.model or ""
-        max_tokens = TokenLimits.get_limit(ModelProvider.QWEN, model_name)
+        model_name = self.config.active_model.model or ""
+        max_tokens = TokenLimits.get_limit("qwen", model_name)
         #TODO，从console剥离
         if self.cli_console:
             self.cli_console.set_max_context_tokens(max_tokens)
@@ -337,9 +328,9 @@ class QwenAgent(BaseAgent):
         self.loop_detector.reset()
         self.trajectory_recorder.start_recording(
             task=user_message,
-            provider=self.config.model_config.provider.value,
+            provider=self.config.active_model.provider or "",
             model= model_name,
-            max_steps=self.max_iterations
+            max_steps=self.max_turns
         )
         yield {"type": "user_message", "data": {"message": user_message, "turn": self.current_turn_index}}
 
@@ -433,8 +424,8 @@ class QwenAgent(BaseAgent):
                 self.trajectory_recorder.record_llm_interaction(
                     messages= trajectory_msg,
                     response= completed_resp, 
-                    provider=self.config.model_config.provider.value,
-                    model=self.config.model_config.model or "",
+                    provider=self.config.active_model.provider or "",
+                    model=self.config.active_model.model or "",
                     tools=tools,
                     agent_name=self.type,
                 )

@@ -3,12 +3,12 @@
 import subprocess
 import os
 from typing import Dict
+from.commands.base_command import BaseCommand
 from .commands.help_command import HelpCommand
 from .commands.about_command import AboutCommand
 from .commands.clear_command import ClearCommand
 from .commands.quit_command import QuitCommand
 from .commands.memory_command import MemoryCommand
-from .commands.auth_command import AuthCommand
 from .commands.stats_command import StatsCommand
 from .commands.agent_command import AgentCommand
 from .commands.bug_command import BugCommand
@@ -22,7 +22,7 @@ from .commands.placeholder_commands import (
 
 class CommandProcessor:
     def __init__(self):
-        self.commands: Dict[str, object] = {}
+        self.commands: Dict[str, BaseCommand] = {}
         self._register_commands()
     
     def _register_commands(self):
@@ -34,7 +34,6 @@ class CommandProcessor:
             ClearCommand(),
             QuitCommand(),
             MemoryCommand(),
-            AuthCommand(),
             StatsCommand(),
             AgentCommand(),
             BugCommand(),

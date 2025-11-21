@@ -1,0 +1,150 @@
+# ============================================================
+# Pywen 配置示例文件
+# 用户只需拷贝本文件到 ~/.pywen/pywen.yaml 或你的项目目录即可使用
+# ============================================================
+
+# ------------------------------------------------------------
+# default_agent
+# ------------------------------------------------------------
+# 设置默认使用哪个 Agent。
+# 它会根据 models[] 中的 agent_name 匹配对应模型配置。
+# 可选值取决于你在 models 数组中定义的 agent_name。
+default_agent: qwen
+
+
+# ------------------------------------------------------------
+# models: 多模型配置
+# ------------------------------------------------------------
+# Pywen 支持多个模型，可根据不同 provider（openai/anthropic/qwen/modelscope）
+# 实现多 Agent 切换、多模型切换、多 wire_api（chat/responses）切换等。
+#
+# 每个 model 块代表一个可用模型，用于代码执行/对话/工具调用任务。
+#
+# 字段说明：
+# - agent_name: Pywen 用来选择 Agent 的逻辑名称（qwen / claudecode / codex）
+# - provider: 模型供应商（openai / anthropic ）
+#   由于oepnai SDK可以兼容市面上绝大多数模型，所以除claude外都应该选用openai 
+#
+# - model: 实际使用的模型名称，如 gpt-5.1 或 Qwen/Qwen3-...
+# - api_key: 该 provider 的密钥（可被 CLI 或 ENV 覆盖）
+# - base_url: 模型 API 访问地址
+# - wire_api: 调用协议，chat = chat.completions API，responses = /responses API
+#   目前除openai gpt-5-codex模型必须使用responses API外，其余都可使用chat 类型接口
+#
+# - temperature、top_p、top_k：采样参数
+# - max_tokens：模型生成 token 上限
+models:
+
+  # ------------------------------
+  # Qwen Coder / ModelScope API
+  # ------------------------------
+  - agent_name: qwen
+    model: ""                                  # 模型名称由 CLI 决定时可留空
+    api_key: "your-qwen-api-key-here"          # 填 ModelScope 的 key
+    base_url: "https://api-inference.modelscope.cn/v1"   # ModelScope API 地址
+    provider: openai                           # 因为使用 OpenAI 风格接口，所以 provider=openai
+    wire_api: chat                             # 使用 /chat/completions 的调用方式
+
+
+  # ------------------------------
+  # Claude Code（Anthropic）
+  # ------------------------------
+  - agent_name: claudecode
+    provider: anthropic                        # Claude 使用 anthropic provider
+    model: "xx"                                # 如 claude-3.5-sonnet
+    api_key: "xx"
+    base_url: "xx"                             # 典型：https://api.anthropic.com/v1
+    wire_api: chat                             # Anthropic 默认使用 chat schema（Claude Messages API）
+
+
+  # ------------------------------
+  # OpenAI Codex 模式（GPT-5, Responses API）
+  # ------------------------------
+  - agent_name: codex
+    provider: openai                           # 使用 OpenAI provider
+    model: "gpt-5.1"                           # 例如 gpt-5.1 / gpt-4.1 / o3-mini
+    api_key: "sk-your-openai-key"
+    base_url: "https://api.openai.com/v1/"     # 注意：末尾斜杠可保留也可删
+    wire_api: responses                        # Responses API，使用gpt-5-codex时必须使用responses类型
+
+
+# ------------------------------------------------------------
+# 权限等级（Agent 的操作权限）
+# ------------------------------------------------------------
+# locked: 禁止执行危险命令（默认）
+# edit-only: 仅允许编辑文件，不允许执行 shell
+# planning: 允许规划与编辑，但受限于风险控制
+# yolo: 最高权限，允许执行 shell / patch / 复杂工具
+permission_level: locked
+
+# ------------------------------------------------------------
+# Agent 最大对话轮数
+# ------------------------------------------------------------
+max_turns: 10
+
+# ------------------------------------------------------------
+# Logging 日志配置
+# ------------------------------------------------------------
+enable_logging: true
+log_level: INFO
+
+# ------------------------------------------------------------
+# Memory Monitor（内存监控）
+# ------------------------------------------------------------
+# Pywen 运行大模型时，可以根据内存占用自动压缩上下文。
+# - check_interval：检测频率（秒）
+# - maximum_capacity：触发压缩的阈值
+# - model：使用什么模型压缩（可选）
+# - rules: 不同比例对应不同 aggressive 程度
+memory_monitor:
+  check_interval: 3
+  maximum_capacity: 100000
+  model: "Qwen/Qwen3-235B-A22B-Instruct-2507"
+  rules:
+    - [0.92, 1]   # 内存使用超过 92% → 压缩等级 1
+    - [0.80, 1]
+    - [0.60, 2]
+    - [0.00, 3]
+
+
+# ------------------------------------------------------------
+# MCP（Model Context Protocol）配置
+# ------------------------------------------------------------
+# 若开启 MCP，Pywen 可以调用外部工具服务器，如文件访问、浏览器控制等。
+# 这里用 false 代表不开启（默认）。
+mcp:
+  enabled: false
+  isolated: false
+
+  servers:
+    # 示例：文件服务器
+    - name: "files"
+      command: "mcp-server-files"              # 服务器入口命令
+      args: []                                  # 启动参数
+      enabled: false
+      include: ["*"]                            # 导入哪些工具
+      save_images_dir: null                     # 如果该 MCP 输出图片，可保存到此目录
+
+
+# ------------------------------------------------------------
+# 额外重复声明（可删除）
+# ------------------------------------------------------------
+permission_level: locked
+
+
+# ------------------------------------------------------------
+# 项目信息（完全自由）
+# ------------------------------------------------------------
+project_name: "Pywen Example"
+
+# 自定义设置（你的插件或 Agent 可读取）
+custom_settings:
+  foo: bar
+  version: 1
+  debug: false
+
+# ------------------------------------------------------------
+# runtime：用于 Agent 临时状态,用户不应该手动修改
+# ------------------------------------------------------------
+runtime: {}
+

@@ -89,33 +89,6 @@ def _to_responses_input(messages: List[Dict[str, str]]) -> ResponseInputParam:
 
     return cast(ResponseInputParam, items)
 
-"""
-class ChatAggregationAdapter:
-    @staticmethod
-    def iter_sync(stream_iter: Iterator) -> Generator[ResponseEvent, None, None]:
-        yield ResponseEvent.created({})
-        for chunk in stream_iter:
-            try:
-                delta = chunk.choices[0].delta.content
-            except Exception:
-                delta = None
-            if delta:
-                yield ResponseEvent.text_delta(delta)
-        yield ResponseEvent.completed({})
-
-    @staticmethod
-    async def iter_async(stream_iter) -> AsyncGenerator[ResponseEvent, None]:
-        yield ResponseEvent.created({})
-        async for chunk in stream_iter:
-            try:
-                delta = chunk.choices[0].delta.content
-            except Exception:
-                delta = None
-            if delta:
-                yield ResponseEvent.text_delta(delta)
-        yield ResponseEvent.completed({})
-"""
-
 class OpenAIAdapter():
     """
     同时支持 Responses API 与 Chat Completions API。

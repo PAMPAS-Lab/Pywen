@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
 from .base import BaseTool, ToolResult
-from pywen.config.config import Config
+from pywen.config.config import AppConfig
 
 
 @dataclass
@@ -22,7 +22,7 @@ class SearchResult:
 class WebSearchTool(BaseTool):
     """Tool for performing web searches using Serper API."""
     
-    def __init__(self, config: Config):
+    def __init__(self, config: AppConfig):
         super().__init__(
             name="web_search",
             display_name="Web Search",

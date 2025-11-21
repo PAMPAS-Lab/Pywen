@@ -284,7 +284,6 @@ async def main() -> None:
     parser.add_argument("--base_url", help="Qwen base URL", default=None)
     parser.add_argument("--temperature", type=float, help="Override temperature")
     parser.add_argument("--max-tokens", type=int, help="Override max tokens")
-    parser.add_argument("--create-config", action="store_true", help="Create default config file")
     parser.add_argument("--session-id", type=str, help="Use specific session ID")
     parser.add_argument("--permission-mode", type=str, help="Set permission mode (yolo, planning, edit-only, locked)", default="locked")
     parser.add_argument("--agent", type=str, help="Use specific agent: qwen|claude", default="qwen")
@@ -292,16 +291,9 @@ async def main() -> None:
     args = parser.parse_args()
 
     cfg_mgr =  ConfigManager(args.config)
-    if args.create_config:
-        cfg_mgr.create_default_config(args)
-        return
-    config = cfg_mgr.resolve_effective_config(args, allow_prompt=args.interactive or not args.prompt)
+    config = cfg_mgr.get_app_config(args)
 
-    try:
-        _perm_level = PermissionLevel(args.permission_mode.lower().replace("-", "_"))
-    except Exception:
-        _perm_level = None
-    perm_level = _perm_level or cfg_mgr.get_permission_level()
+    perm_level = PermissionLevel(config.permission_level)
     perm_mgr = PermissionManager(perm_level)
 
     console = CLIConsole(perm_mgr)
@@ -310,7 +302,7 @@ async def main() -> None:
     file_restorer = IntelligentFileRestorer()
 
     session_id = args.session_id or str(uuid.uuid4())[:8]
-    setattr(config, "session_id", session_id)
+    #setattr(config, "session_id", session_id)
 
     hooks_cfg = load_hooks_config(cfg_mgr.get_default_hooks_path())
     hook_mgr = HookManager(hooks_cfg)

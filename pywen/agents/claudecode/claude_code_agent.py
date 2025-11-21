@@ -6,7 +6,7 @@ from typing import Dict, List, Optional, AsyncGenerator, Any
 import datetime
 from pywen.agents.base_agent import BaseAgent
 from pywen.tools.base import BaseTool
-from pywen.llm.llm_client import LLMClient, LLMConfig, LLMMessage
+from pywen.llm.llm_client import LLMClient, LLMMessage
 from pywen.utils.llm_basics import LLMResponse
 from pywen.utils.tool_basics import ToolCall, ToolResult
 from pywen.core.trajectory_recorder import TrajectoryRecorder
@@ -28,16 +28,8 @@ class ClaudeCodeAgent(BaseAgent):
 
     def __init__(self, config, hook_mgr, cli_console=None):
         super().__init__(config, hook_mgr, cli_console)
-        self.type = "ClaudeCodeAgent"
-
-        self.llmconfig = LLMConfig(
-            provider=config.model_config.provider.value,
-            api_key=config.model_config.api_key,
-            base_url=config.model_config.base_url,
-            model=config.model_config.model or "qwen-plus",
-            wire_api="auto",
-        )
-        self.llm_client = LLMClient(self.llmconfig)
+        self.type = "ClaudeAgent"
+        self.llm_client = LLMClient(self.config.active_model)
         self.prompts = ClaudeCodePrompts()
         self.project_path = os.getcwd()
         self.max_iterations = getattr(config, 'max_iterations', 10)

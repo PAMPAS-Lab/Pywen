@@ -6,7 +6,7 @@ from typing import Callable, Iterable, Optional, AsyncGenerator
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 
-from pywen.config.config import Config, MCPConfig
+from pywen.config.config import AppConfig, MCPConfig
 from pywen.ui.cli_console import CLIConsole
 from pywen.core.trajectory_recorder import TrajectoryRecorder
 from pywen.core.tool_registry import ToolRegistry
@@ -19,7 +19,7 @@ from pywen.hooks.manager import HookManager
 class BaseAgent(ABC):
     """Base class providing shared components for all agent implementations."""
     
-    def __init__(self, config: Config, hook_mgr:HookManager, cli_console: Optional[CLIConsole] =None):
+    def __init__(self, config: AppConfig, hook_mgr:HookManager, cli_console: Optional[CLIConsole] =None):
         self.config = config
         self.cli_console = cli_console
         self.type = "BaseAgent"
@@ -75,30 +75,6 @@ class BaseAgent(ABC):
     def _build_system_prompt(self) -> str:
         """Build system prompt with tool descriptions."""
         pass
-
-    def reload_config(self):
-        """重新加载配置"""
-        try:
-            from pywen.config.manager import ConfigManager 
-            cfg_mgr = ConfigManager("pywen_config.json")
-            new_config = cfg_mgr.load()
-            old_session_id = getattr(self.config, 'session_id', None)
-            self.config = new_config
-            if hasattr(self, 'max_iterations'):
-                self.max_iterations = new_config.max_iterations
-            if old_session_id:
-                self.config.session_id = old_session_id
-            
-            # 重建系统提示 (如果子类实现了该方法)
-            if hasattr(self, '_build_system_prompt'):
-                self.system_prompt = self._build_system_prompt()
-            if self.cli_console: 
-                self.cli_console.print(f"Config reloaded - Model: {new_config.model_config.model}, Max Steps: {new_config.max_iterations}")
-            return True
-        except Exception as e:
-            if self.cli_console: 
-                self.cli_console.print(f"Failed to reload config: {e}")
-            return False
 
     def __make_include_predicate(self, patterns: Optional[Iterable[str]]) -> Optional[Callable[[str], bool]]:
         if not patterns:

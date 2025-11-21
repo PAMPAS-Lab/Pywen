@@ -1,76 +1,102 @@
-# pywen/config/config.py
-"""Configuration dataclasses for Pywen Agent (unchanged API)."""
+from __future__ import annotations
+from typing import Any, Dict, List, Optional, Literal
+from pydantic import BaseModel, Field
 
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional, Dict, Any, List
-from pywen.core.permission_manager import PermissionLevel 
-
-
-class ModelProvider(Enum):
-    QWEN = "qwen"
-    OPENAI = "openai"
-    ANTHROPIC = "anthropic"
-
-@dataclass
-class MCPServerConfig:
-    name: str
-    command: str
-    args: List[str] = field(default_factory=list)
-    enabled: bool = True
-    include: List[str] = field(default_factory=list)
-    save_images_dir: Optional[str] = None
-    isolated: bool = False
-    extras: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class MCPConfig:
-    enabled: bool = True
-    isolated: bool = False
-    servers: List[MCPServerConfig] = field(default_factory=list)
-    extras: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ModelConfig:
-    provider: ModelProvider
-    model: Optional[str] = None
+class ModelConfig(BaseModel):
+    agent_name: str
     api_key: Optional[str] = None
     base_url: Optional[str] = None
-    temperature: float = 0.7
-    max_tokens: int = 4096
-    top_p: float = 0.95
-    top_k: int = 50
-    extras: Dict[str, Any] = field(default_factory=dict)
+    model: Optional[str] = None
+    provider: Literal["openai", "anthropic", None] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    wire_api : Literal["chat", "responses", None] = None
+    class ConfigDict:
+        extra = "allow"
 
+class MCPServerConfig(BaseModel):
+    name: str
+    command: str
+    args: List[str] = Field(default_factory=list)
+    enabled: bool = True
+    include: List[str] = Field(default_factory=list)
+    save_images_dir: Optional[str] = None
+    isolated: bool = False
+    class ConfigDict:
+        extra = "allow"
 
-@dataclass
-class MemorymonitorConfig:
-    check_interval: int = 3
-    maximum_capacity: int = 1_000_000
-    rules: List[List[float]] = field(default_factory=lambda: [
-        [0.92, 1],
-        [0.80, 1],
-        [0.60, 2],
-        [0.00, 3],
-    ])
-    model: str = "Qwen/Qwen3-235B-A22B-Instruct-2507"
-    extras: Dict[str, Any] = field(default_factory=dict)
+class MCPConfig(BaseModel):
+    enabled: bool = True
+    isolated: bool = False
+    servers: List[MCPServerConfig] = Field(default_factory=list)
+    class ConfigDict:
+        extra = "allow"
 
+class MemoryMonitorConfig(BaseModel):
+    check_interval: int = 60
+    maximum_capacity: int = 4096
+    rules: Dict[str, Any] = Field(default_factory=dict)
+    model: Optional[str] = None
+    class ConfigDict:
+        extra = "allow"
 
-@dataclass
-class Config:
-    model_config: ModelConfig
-    max_iterations: int = 10
+class AppConfig(BaseModel):
+    default_agent: Optional[str] = None
+    models: List[ModelConfig]
+    permission_level: str = "locked"
+    max_turns: int = 10
     enable_logging: bool = True
-    session_id: str | None = None
     log_level: str = "INFO"
-    save_trajectories: bool = False
-    trajectories_dir: str | None = None
-    permission_level: PermissionLevel = PermissionLevel.LOCKED
-    serper_api_key: Optional[str] = None
-    jina_api_key: Optional[str] = None
+
     mcp: Optional[MCPConfig] = None
-    memory_monitor: Optional[MemorymonitorConfig] = None
-    extras: Dict[str, Any] = field(default_factory=dict)
+    memory_monitor: Optional[MemoryMonitorConfig] = None
+
+    runtime: Dict[str, Any] = Field(default_factory=dict)
+
+    class ConfigDict:
+        extra = "allow"
+
+    @property
+    def active_agent_name(self) -> str:
+        """当前激活的 agent 名称"""
+        name = self.runtime.get("active_model")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+
+        if isinstance(self.default_agent, str) and self.default_agent.strip():
+            return self.default_agent.strip()
+
+        if len(self.models) == 1:
+            return self.models[0].agent_name
+
+        raise ValueError(
+            "Active agent is not determined. "
+            "Set 'default_agent' in config or runtime.active_agent."
+        )
+
+    @property
+    def active_model(self) -> ModelConfig:
+        """ 返回当前激活的 ModelConfig """
+        name = self.active_agent_name
+        for p in self.models:
+            if p.agent_name == name:
+                return p
+        raise ValueError(f"Active model '{name}' not found in agents.")
+
+    def set_active_model(self, name: str) -> None:
+        """
+        切换当前激活模型。
+        只允许切到已配置的 model，否则直接报错。
+        """
+        name = name.strip().lower()
+        if not name:
+            raise ValueError("Model name cannot be empty.")
+
+        if name.endswith("agent"):
+            name = name[: -len("agent")]
+        if not any(m.agent_name == name for m in self.models):
+            raise ValueError(f"Model '{name}' not found in models.")
+
+        self.runtime["active_model"] = name

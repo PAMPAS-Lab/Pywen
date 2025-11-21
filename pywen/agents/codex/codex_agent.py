@@ -1,11 +1,11 @@
 import json,os
 from pathlib import Path
-from typing import Dict, List, Mapping, Literal, Any, AsyncGenerator,Optional
+from typing import Dict, List, Mapping, Literal, Any, AsyncGenerator
 from pydantic import BaseModel
 from pywen.agents.base_agent import BaseAgent
-from pywen.llm.llm_client import LLMClient, LLMConfig 
+from pywen.llm.llm_client import LLMClient 
 from pywen.utils.tool_basics import ToolCall
-from pywen.utils.token_limits import TokenLimits, ModelProvider
+from pywen.config.token_limits import TokenLimits 
 from pywen.core.session_stats import session_stats
 
 MessageRole = Literal["system", "developer", "user", "assistant"]
@@ -46,23 +46,13 @@ class CodexAgent(BaseAgent):
     def __init__(self, config, hook_mgr, cli_console=None):
         super().__init__(config, hook_mgr, cli_console)
         self.type = "CodexAgent"
-        self.llmconfig = LLMConfig(
-            provider=config.model_config.provider.value,
-            api_key=config.model_config.api_key,
-            base_url=config.model_config.base_url,
-            model= config.model_config.model or "gpt-5-codex",
-            turn_cnt_max = 5,
-            wire_api="responses",
-        )
-        self.llm_client = LLMClient(self.llmconfig)
+        self.llm_client = LLMClient(self.config.active_model)
         session_stats.set_current_agent(self.type)
-        self.turn_cnt_max = self.llmconfig.turn_cnt_max
-        self.max_iterations = config.max_iterations
+        self.turn_cnt_max = config.max_turns
         self.turn_index = 0
         self.history: History = History(system_prompt= self._build_system_prompt())
         self.tools = self.tools_format_convert()
         self.current_task = None
-
 
     def get_enabled_tools(self) -> List[str]:
         return ['shell_tool', 'update_plan', 'apply_patch',]
@@ -94,16 +84,17 @@ class CodexAgent(BaseAgent):
         self.turn_index = 0
         yield {"type": "user_message", "data": {"message": user_message, "turn": self.turn_index}}
 
-        model_name = self.llmconfig.model
-        provider = self.llmconfig.provider
+        model_name = self.config.active_model.model or "gpt-5-codex"
+        provider = self.config.active_model.provider or "openai"
+
         session_stats.record_task_start(self.type)
 
-        max_tokens = TokenLimits.get_limit(ModelProvider.OPENAI, model_name)
+        max_tokens = TokenLimits.get_limit("openai", model_name)
         if self.cli_console:
             self.cli_console.set_max_context_tokens(max_tokens)
 
         self.trajectory_recorder.start_recording(
-            task=user_message, provider=provider, model=model_name, max_steps=self.max_iterations
+            task=user_message, provider=provider, model=model_name, max_steps=self.turn_cnt_max
         )
         self.history.add_message(role="user", content=user_message)
         env_msg = self.build_environment_context(cwd=os.getcwd(),shell=os.environ.get("SHELL", "bash"))
@@ -111,7 +102,7 @@ class CodexAgent(BaseAgent):
 
         while self.turn_index < self.turn_cnt_max:
             messages = self.history.to_responses_input()
-            params = {"model": model_name, "api": self.llmconfig.wire_api, "tools" : self.tools}
+            params = {"model": model_name, "api": self.config.active_model.wire_api, "tools" : self.tools}
 
             self.current_task = None
             for m in reversed(messages):
@@ -181,15 +172,15 @@ class CodexAgent(BaseAgent):
                     content = responses.output_text,
                     tool_calls = tool_calls,
                     usage = responses.usage,
-                    model = self.llmconfig.model,
+                    model = self.config.active_model.model,
                     finish_reason = "completed",
                     )
 
         self.trajectory_recorder.record_llm_interaction(
                 messages = converted_messages,
                 response = resp,
-                provider = self.llmconfig.provider,
-                model = self.llmconfig.model,
+                provider = self.config.active_model.provider or "openai",
+                model = self.config.active_model.model or "gpt-5-codex",
                 tools = self.tools,
                 current_task = self.current_task,
                 agent_name = self.type,
