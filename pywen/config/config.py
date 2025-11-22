@@ -61,7 +61,7 @@ class AppConfig(BaseModel):
     @property
     def active_agent_name(self) -> str:
         """当前激活的 agent 名称"""
-        name = self.runtime.get("active_model")
+        name = self.runtime.get("active_agent")
         if isinstance(name, str) and name.strip():
             return name.strip()
 
@@ -78,25 +78,29 @@ class AppConfig(BaseModel):
 
     @property
     def active_model(self) -> ModelConfig:
-        """ 返回当前激活的 ModelConfig """
+        """ 
+        返回当前激活的 ModelConfig 
+        利用agentg与model的映射关系找到对应的model配置。
+        如果一个agent对应多个model配置，则此方法需要扩展。
+        """
         name = self.active_agent_name
         for p in self.models:
             if p.agent_name == name:
                 return p
-        raise ValueError(f"Active model '{name}' not found in agents.")
+        raise ValueError(f"Active agent '{name}' not found in agents.")
 
-    def set_active_model(self, name: str) -> None:
+    def set_active_agent(self, name: str) -> None:
         """
-        切换当前激活模型。
-        只允许切到已配置的 model，否则直接报错。
+        切换当前激活agent。
+        只允许切到已配置的 agent，否则直接报错。
         """
         name = name.strip().lower()
         if not name:
-            raise ValueError("Model name cannot be empty.")
+            raise ValueError("agent name cannot be empty.")
 
         if name.endswith("agent"):
             name = name[: -len("agent")]
         if not any(m.agent_name == name for m in self.models):
             raise ValueError(f"Model '{name}' not found in models.")
 
-        self.runtime["active_model"] = name
+        self.runtime["active_agent"] = name

@@ -114,7 +114,7 @@ class AgentCommand(BaseCommand):
     def _create_agent(self, config, hook_mgr, agent_type: str):
         """创建agent实例"""
         if config:
-            config.set_active_model(agent_type)
+            config.set_active_agent(agent_type)
         if agent_type == "qwen":
             from pywen.agents.qwen.qwen_agent import QwenAgent
             return QwenAgent(config, hook_mgr)
