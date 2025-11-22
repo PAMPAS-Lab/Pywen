@@ -1,8 +1,8 @@
 import os
 from typing import Dict, List, Optional, AsyncGenerator, Any
 import datetime
+import json
 from pywen.agents.base_agent import BaseAgent
-from pywen.tools.base import BaseTool
 from pywen.llm.llm_client import LLMClient, LLMMessage
 from pywen.utils.llm_basics import LLMResponse
 from pywen.utils.tool_basics import ToolCall, ToolResult
@@ -115,9 +115,10 @@ class ClaudeCodeAgent(BaseAgent):
             msgs.append(one)
         return msgs
 
-    
+    def _build_system_prompt(self) -> str:
+        return ""
 
-    def _build_system_prompt(self) -> List[LLMMessage]:
+    def _build_claude_messages(self) -> List[LLMMessage]:
         """构建系统提示词，拼接动态信息"""
         messages = []
 
@@ -184,11 +185,10 @@ class ClaudeCodeAgent(BaseAgent):
     async def run(self, user_message: str, **kwargs) -> AsyncGenerator[Dict[str, Any], None]:
         try:
             agent_registry.switch_to(self)
-
             self.trajectory_recorder.start_recording(
                 task=user_message,
-                provider=self.llmconfig.provider,
-                model=self.llmconfig.model,
+                provider=self.config.active_model.provider or "anthropic",
+                model=self.config.active_model.model or "claude-3",
                 max_steps=self.max_iterations
             )
 
@@ -219,7 +219,7 @@ class ClaudeCodeAgent(BaseAgent):
             llm_message = LLMMessage(role="user", content=user_message)
             self.conversation_history.append(llm_message)
 
-            messages = self._build_system_prompt()
+            messages = self._build_claude_messages()
 
             async for event in self._query_recursive(messages, depth=0, **kwargs):
                 yield event
@@ -236,7 +236,7 @@ class ClaudeCodeAgent(BaseAgent):
         try:
             quota_messages = [{"role": "user", "content": "quota"}]
 
-            params = {"model": self.llmconfig.model}
+            params = {"model": self.config.active_model.model}
             content = ""
 
             async for evt in self.llm_client.astream_response(quota_messages, **params):
@@ -251,7 +251,7 @@ class ClaudeCodeAgent(BaseAgent):
 
             quota_llm_response = LLMResponse(
                 content=content,
-                model=self.llmconfig.model,
+                model=self.config.active_model.model,
                 finish_reason="stop",
                 usage=None,
                 tool_calls=[]
@@ -260,8 +260,8 @@ class ClaudeCodeAgent(BaseAgent):
             self.trajectory_recorder.record_llm_interaction(
                 messages=[LLMMessage(role="user", content="quota")],
                 response=quota_llm_response,
-                provider=self.llmconfig.provider,
-                model=self.llmconfig.model,
+                provider=self.config.active_model.provider or "anthropic",
+                model=self.config.active_model.model or "claude-3",
                 tools=None,
                 current_task="quota_check",
                 agent_name="ClaudeCodeAgent"
@@ -280,7 +280,7 @@ class ClaudeCodeAgent(BaseAgent):
                 {"role": "user", "content": user_input}
             ]
 
-            params = {"model": self.llmconfig.model}
+            params = {"model": self.config.active_model.model}
             content = ""
 
             async for evt in self.llm_client.astream_response(topic_messages, **params):
@@ -295,7 +295,7 @@ class ClaudeCodeAgent(BaseAgent):
 
             topic_llm_response = LLMResponse(
                 content=content,
-                model=self.llmconfig.model,
+                model=self.config.active_model.model,
                 finish_reason="stop",
                 usage=None,
                 tool_calls=[]
@@ -307,8 +307,8 @@ class ClaudeCodeAgent(BaseAgent):
                     LLMMessage(role="user", content=user_input)
                 ],
                 response=topic_llm_response,
-                provider=self.llmconfig.provider,
-                model=self.llmconfig.model,
+                provider=self.config.active_model.provider or "anthropic",
+                model=self.config.active_model.model or "claude-3",
                 tools=None,
                 current_task="topic_detection",
                 agent_name="ClaudeCodeAgent"
@@ -316,7 +316,6 @@ class ClaudeCodeAgent(BaseAgent):
 
             if content:
                 try:
-                    import json
                     topic_info = json.loads(content.strip())
                     return topic_info
                 except json.JSONDecodeError:
@@ -371,7 +370,7 @@ class ClaudeCodeAgent(BaseAgent):
                         name=tc.get("name", ""),
                         arguments=tc.get("arguments", {})
                     ) for tc in tool_calls] if tool_calls else None,
-                    model=self.config.model_config.model,
+                    model=self.config.active_model.model,
                     finish_reason="stop",
                     usage=final_response.usage if final_response and hasattr(final_response, 'usage') else None
                 )
@@ -379,8 +378,8 @@ class ClaudeCodeAgent(BaseAgent):
                 self.trajectory_recorder.record_llm_interaction(
                     messages=messages,
                     response=llm_response,
-                    provider=self.config.model_config.provider.value,
-                    model=self.config.model_config.model,
+                    provider=self.config.active_model.provider or "anthropic",
+                    model=self.config.active_model.model or "claude-3",
                     tools=self.tools,
                     current_task=f"Processing query at depth {depth}",
                     agent_name=self.type
@@ -473,7 +472,7 @@ class ClaudeCodeAgent(BaseAgent):
             formatted_messages = self._build_messages(messages)
 
             params = {
-                "model": self.llmconfig.model,
+                "model": self.config.active_model.model,
                 "tools": self.tools_formatted,
                 "max_tokens": 4096
             }
@@ -512,7 +511,6 @@ class ClaudeCodeAgent(BaseAgent):
 
                 elif evt.type == "content_block_stop":
                     if current_tool_call:
-                        import json
                         try:
                             tool_args = json.loads(tool_json_buffer) if tool_json_buffer else {}
                         except json.JSONDecodeError:
