@@ -256,6 +256,3 @@ class BashTool(BaseTool):
         except Exception as e:
             return ToolResult(call_id="", error=f"Error executing command: {str(e)}")
 
-
-
-

@@ -70,6 +70,8 @@ class ClaudeCodeAgent(BaseAgent):
         adapted_tools = []
         for tool in current_tools:
             try:
+                # 使用适配器包装工具以符合Claude的要求
+                # 实际只是更改了描述
                 adapter = ToolAdapterFactory.create_adapter(tool)
                 adapted_tools.append(adapter)
             except ValueError:
@@ -78,6 +80,10 @@ class ClaudeCodeAgent(BaseAgent):
         self.tools = adapted_tools
 
     def tools_format_convert(self) -> List[Dict[str, Any]]:
+        """ 作用: 
+            1. 将工具列表转换为Claude所需的格式,重新覆盖self.tools属性
+            2. 返回转换后的工具列表 
+        """
         self._setup_claude_code_tools()
         tool_list = []
         for t in self.tools:
@@ -447,6 +453,7 @@ class ClaudeCodeAgent(BaseAgent):
             ] + self.conversation_history.copy()
 
             async for event in self._query_recursive(updated_messages, depth=depth+1, **kwargs):
+                print(event)
                 yield event
 
         except Exception as e:

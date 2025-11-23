@@ -27,7 +27,6 @@ class BaseTool(ABC):
         can_update_output: bool = False,
         config: Optional[Any] = None,
         risk_level: ToolRiskLevel = ToolRiskLevel.SAFE,
-        tool_type: str = "function",
     ):
         self.name = name
         self.display_name = display_name
@@ -38,7 +37,6 @@ class BaseTool(ABC):
         self.can_update_output = can_update_output
         self.config = config
         self.risk_level = risk_level
-        self.tool_type= tool_type,
     
     @abstractmethod
     async def execute(self, **kwargs) -> ToolResult:

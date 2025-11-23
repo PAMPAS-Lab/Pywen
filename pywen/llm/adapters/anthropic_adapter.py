@@ -179,6 +179,3 @@ class AnthropicAdapter():
             return ResponseEvent.completed({})
 
         return None
-
-  
-
