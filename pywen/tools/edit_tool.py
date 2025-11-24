@@ -15,7 +15,7 @@ Usage:
 - Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
 """
 
-@register_tool(name="edit", providers=["claude", "qwwen",])
+@register_tool(name="edit", providers=["claude", "qwen"])
 class EditTool(BaseTool):
     name="edit"
     display_name="Edit File"

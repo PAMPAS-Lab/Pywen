@@ -14,7 +14,7 @@ Usage:
 - NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
 - Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.
 """
-@register_tool(name="write_file", providers=["claude", "qwen",])
+@register_tool(name="write_file", providers=["claude", "qwen"])
 class WriteFileTool(BaseTool):
     name="write_file"
     display_name="Write File"
@@ -189,7 +189,7 @@ Usage:
 - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.
 """
 
-@register_tool(name="read_file", providers=["claude", "qwwen",])
+@register_tool(name="read_file", providers=["claude", "qwen"])
 class ReadFileTool(BaseTool):
     name="read_file"
     display_name="Read File"
