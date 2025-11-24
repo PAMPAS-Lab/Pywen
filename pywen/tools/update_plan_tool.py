@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Mapping
 from .base_tool import BaseTool, ToolResult, ToolRiskLevel
+from pywen.core.tool_registry2 import register_tool
 
 class PlanItemStatus(str, Enum):
     TODO = "todo"
@@ -47,41 +48,37 @@ def _render_markdown(explanation: Optional[str], items: List[Dict[str, Any]]) ->
         lines.append(f"- {em} **{it['step']}**  _({s})_")
     return "\n".join(lines)
 
+@register_tool(name="update_plan", providers=["codex"])
 class UpdatePlanTool(BaseTool):
-    """Update Plan tool compatible with Codex semantics."""
-    def __init__(self):
-        super().__init__(
-            name="update_plan",
-            display_name="Update Plan",
-            description=(
-                "Updates the task plan.Provide an optional explanation and a list of plan items, each with a step and status.At most one step can be in_progress at a time."
-            ),
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "explanation": {"type": "string", "description": "Optional rationale for the change."},
-                    "plan": {
-                        "type": "array",
-                        "description": "List of plan items to set (full replacement).",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "step": {"type": "string"},
-                                "status": {
-                                    "type": "string",
-                                    "enum": ["todo", "in_progress", "done", "blocked", "skipped"],
-                                },
-                            },
-                            "required": ["step", "status"],
-                            "additionalProperties": False,
+    name="update_plan"
+    display_name="Update Plan"
+    description=(
+        "Updates the task plan.Provide an optional explanation and a list of plan items, each with a step and status.At most one step can be in_progress at a time."
+    )
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "explanation": {"type": "string", "description": "Optional rationale for the change."},
+            "plan": {
+                "type": "array",
+                "description": "List of plan items to set (full replacement).",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "step": {"type": "string"},
+                        "status": {
+                            "type": "string",
+                            "enum": ["todo", "in_progress", "done", "blocked", "skipped"],
                         },
                     },
+                    "required": ["step", "status"],
+                    "additionalProperties": False,
                 },
-                "required": ["plan"],
-                "additionalProperties": False,
             },
-            risk_level=ToolRiskLevel.SAFE,
-        )
+        },
+        "required": ["plan"],
+        "additionalProperties": False,
+    }
 
     async def execute(self, **kwargs) -> ToolResult:
         explanation: Optional[str] = kwargs.get("explanation")

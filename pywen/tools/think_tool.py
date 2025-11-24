@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any, Mapping 
 from pywen.tools.base_tool import BaseTool
 from pywen.utils.tool_basics import ToolResult
+from pywen.core.tool_registry2 import register_tool
 
 DESCRIPTION= """Use the tool to think about something. 
 It will not obtain new information or make any changes to the repository, 
@@ -23,25 +24,22 @@ and assess which change(s) are likely to be simplest and most effective
 The tool simply logs your thought process for better transparency and does not execute any code or make changes.
 """
 
+@register_tool(name="think_tool", providers=["claude"]) 
 class ThinkTool(BaseTool):
-    def __init__(self, config=None):
-        super().__init__(
-            name="think_tool",
-            display_name="Think",
-            description=DESCRIPTION,
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "thought": {
-                        "type": "string",
-                        "description": "Your thoughts, reasoning, or analysis"
-                    }
-                },
-                "required": ["thought"]
-            },
-            can_update_output=False,
-        )
-        self._thoughts_log = []
+    name="think_tool"
+    display_name="Think"
+    description=DESCRIPTION
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "thought": {
+                "type": "string",
+                "description": "Your thoughts, reasoning, or analysis"
+                }
+        },
+        "required": ["thought"]
+    }
+    _thoughts_log = []
     
     def is_risky(self, **kwargs) -> bool:
         """Think tool is completely safe"""

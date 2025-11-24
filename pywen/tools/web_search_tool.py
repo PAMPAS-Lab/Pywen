@@ -4,7 +4,7 @@ import os
 from typing import Dict, Any, List, Optional,Mapping
 from dataclasses import dataclass
 from .base_tool import BaseTool, ToolResult
-from pywen.config.config import AppConfig
+from pywen.core.tool_registry2 import register_tool
 
 CLAUDE_DESCRIPTION = """
 - Allows Claude to search the web and use the results to inform responses
@@ -22,13 +22,12 @@ class SearchResult:
     snippet: str
     position: int = 0
 
+@register_tool(name="web_search", providers=["claude", "qwen"])
 class WebSearchTool(BaseTool):
-    def __init__(self, config: AppConfig):
-        super().__init__(
-            name="web_search",
-            display_name="Web Search",
-            description="Performs a web search using Serper API and returns the results. This tool is useful for finding current information on the internet.",
-            parameter_schema={
+    name="web_search"
+    display_name="Web Search"
+    description="Performs a web search using Serper API and returns the results. This tool is useful for finding current information on the internet."
+    parameter_schema={
                 "type": "object",
                 "properties": {
                     "query": {
@@ -45,17 +44,14 @@ class WebSearchTool(BaseTool):
                 },
                 "required": ["query"]
             }
-        )
-        self.config = config
-        # 从多个来源加载 API key
-        self.api_key = self._get_api_key()
-        self.base_url = "https://google.serper.dev/search"
+    api_key = ""
+    base_url = "https://google.serper.dev/search"
     
     def _get_api_key(self) -> str:
         """从配置或环境变量中获取 Serper API key"""
         # 1. 优先从配置文件中获取
-        if hasattr(self.config, 'serper_api_key') and self.config.serper_api_key:
-            return self.config.serper_api_key
+        #if hasattr(self.config, 'serper_api_key') and self.config.serper_api_key:
+            #return self.config.serper_api_key
         
         # 2. 从环境变量获取
         api_key = os.getenv("SERPER_API_KEY")

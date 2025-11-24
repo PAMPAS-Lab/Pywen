@@ -11,23 +11,13 @@ class ToolRiskLevel(Enum):
     HIGH = "high"           # 高风险操作，强制确认
 
 class BaseTool(ABC):
-    """Enhanced base class matching TypeScript BaseTool."""
-    
-    def __init__(
-        self,
-        name: str,
-        display_name: str,
-        description: str,
-        parameter_schema: Dict[str, Any],
-        can_update_output: bool = False,
-        risk_level: ToolRiskLevel = ToolRiskLevel.SAFE,
-    ):
-        self.name = name
-        self.display_name = display_name
-        self.description = description
-        self.parameter_schema = parameter_schema
-        self.can_update_output = can_update_output
-        self.risk_level = risk_level
+    name: str = ""
+    display_name: str = ""
+    description: str = ""
+    parameter_schema: Dict[str, Any] = {}
+    is_output_markdown: bool = False
+    can_update_output: bool = False
+    risk_level: ToolRiskLevel = ToolRiskLevel.SAFE
     
     @abstractmethod
     async def execute(self, **kwargs) -> ToolResult:

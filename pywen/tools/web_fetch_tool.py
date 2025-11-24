@@ -4,6 +4,7 @@ import html
 import re
 from typing import Any, Mapping
 from .base_tool import BaseTool, ToolResult
+from pywen.core.tool_registry2 import register_tool
 
 CLAUDE_DESCRIPTION = """
 - Fetches content from a specified URL and processes it using an AI model
@@ -14,30 +15,26 @@ CLAUDE_DESCRIPTION = """
 - Use this tool when you need to retrieve and analyze web content
 """
 
+@register_tool(name="web_fetch", providers=["claude", "qwen"])
 class WebFetchTool(BaseTool):
-    """Tool for fetching web content."""
-    
-    def __init__(self):
-        super().__init__(
-            name="web_fetch",
-            display_name="Fetch Web Content",
-            description="Fetch content from web URLs",
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "URL to fetch content from"
-                    },
-                    "timeout": {
-                        "type": "integer",
-                        "description": "Request timeout in seconds (default: 30)",
-                        "default": 30
-                    }
-                },
-                "required": ["url"]
+    name="web_fetch"
+    display_name="Fetch Web Content"
+    description="Fetch content from web URLs"
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "url": {
+                "type": "string",
+                "description": "URL to fetch content from"
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Request timeout in seconds (default: 30)",
+                "default": 30
             }
-        )
+        },
+        "required": ["url"]
+    }
     
     def _clean_html_content(self, html_content: str) -> str:
         """Extract clean text from HTML content using built-in modules."""

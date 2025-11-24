@@ -3,6 +3,7 @@ import os
 import shlex
 from typing import Any, List, Optional, override,Mapping
 from .base_tool import BaseTool, ToolResult, ToolRiskLevel
+from pywen.core.tool_registry2 import register_tool
 
 def _assert_command_list(command: Any) -> List[str]:
     if not (isinstance(command, list) and all(isinstance(x, str) for x in command)):
@@ -12,49 +13,47 @@ def _assert_command_list(command: Any) -> List[str]:
 def _join_cmd(command: List[str]) -> str:
     return " ".join(shlex.quote(x) for x in command)
 
+@register_tool(name="shell", providers=["codex"])
 class CodexShellTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="shell",
-            display_name="Codex Shell",
-            description="Runs a shell command and returns its output.",
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "The command to execute (argv array), e.g. ['ls','-la'] "
-                                       "If you need shell features, pass ['bash','-lc','your pipeline...']",
-                    },
-                    "workdir": {
-                        "type": "string",
-                        "description": "The working directory to execute the command in",
-                    },
-                    "timeout_ms": {
-                        "type": "number",
-                        "description": "The timeout for the command in milliseconds",
-                    },
-                    "with_escalated_permissions": {
-                        "type": "boolean",
-                        "description": (
-                            "Whether to request escalated permissions. "
-                            "Set to true if command needs to be run without sandbox restrictions"
-                        ),
-                    },
-                    "justification": {
-                        "type": "string",
-                        "description": (
-                            "Only set if with_escalated_permissions is true. "
-                            "1-sentence explanation of why we want to run this command."
-                        ),
-                    },
-                },
-                "required": ["command"],
-                "additionalProperties": False,
+    name="shell"
+    display_name="Codex Shell"
+    description="Runs a shell command and returns its output."
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "The command to execute (argv array), e.g. ['ls','-la'] "
+                               "If you need shell features, pass ['bash','-lc','your pipeline...']",
             },
-            risk_level=ToolRiskLevel.LOW,
-        )
+            "workdir": {
+                "type": "string",
+                "description": "The working directory to execute the command in",
+            },
+            "timeout_ms": {
+                "type": "number",
+                "description": "The timeout for the command in milliseconds",
+            },
+            "with_escalated_permissions": {
+                "type": "boolean",
+                "description": (
+                    "Whether to request escalated permissions. "
+                    "Set to true if command needs to be run without sandbox restrictions"
+                ),
+            },
+            "justification": {
+                "type": "string",
+                "description": (
+                    "Only set if with_escalated_permissions is true. "
+                    "1-sentence explanation of why we want to run this command."
+                ),
+            },
+        },
+        "required": ["command"],
+        "additionalProperties": False,
+    }
+    risk_level=ToolRiskLevel.LOW
 
     def validate_parameters(self, **kwargs) -> bool:
         try:

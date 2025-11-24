@@ -1,6 +1,7 @@
 import os
 from typing import Any, Mapping
 from .base_tool import BaseTool, ToolResult, ToolRiskLevel
+from pywen.core.tool_registry2 import register_tool
 
 CLAUDE_DESCRIPTION = """
 Performs exact string replacements in files.
@@ -14,34 +15,30 @@ Usage:
 - Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
 """
 
+@register_tool(name="edit", providers=["claude", "qwwen",])
 class EditTool(BaseTool):
-    """Tool for editing files using string replacement."""
-    
-    def __init__(self):
-        super().__init__(
-            name="edit",
-            display_name="Edit File",
-            description="Edit files by replacing text",
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the file to edit"
-                    },
-                    "old_str": {
-                        "type": "string",
-                        "description": "Text to replace"
-                    },
-                    "new_str": {
-                        "type": "string",
-                        "description": "Replacement text"
-                    }
-                },
-                "required": ["path", "old_str", "new_str"]
+    name="edit"
+    display_name="Edit File"
+    description="Edit files by replacing text"
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file to edit"
             },
-            risk_level=ToolRiskLevel.MEDIUM
-        )
+            "old_str": {
+                "type": "string",
+                "description": "Text to replace"
+            },
+            "new_str": {
+                "type": "string",
+                "description": "Replacement text"
+            }
+        },
+        "required": ["path", "old_str", "new_str"]
+    }
+    risk_level=ToolRiskLevel.MEDIUM
 
     async def _generate_confirmation_message(self, **kwargs) -> str:
         """Generate detailed confirmation message with diff preview."""

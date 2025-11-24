@@ -1,5 +1,5 @@
 import importlib
-from typing import Dict, List, Optional, Any, Callable
+from typing import Dict, List, Optional, Callable
 from pywen.tools.base_tool import BaseTool
 
 class ToolRegistry:
@@ -19,10 +19,6 @@ class ToolRegistry:
         """Get list of all registered tools."""
         return list(self._tools.values())
     
-    def get_function_declarations(self) -> List[Dict[str, Any]]:
-        """Get function declarations for all tools."""
-        return [tool.get_function_declaration() for tool in self._tools.values()]
-    
     def remove_tool(self, name: str) -> bool:
         """Remove a tool from registry."""
         if name in self._tools:
@@ -34,22 +30,12 @@ class ToolRegistry:
         """Clear all tools from registry."""
         self._tools.clear()
     
-    def get_tool_names(self) -> List[str]:
-        """Get list of tool names."""
-        return list(self._tools.keys())
-
-    def register_tool_factory(self, tool_name: str, factory: Callable):
-        """Register a custom tool factory."""
-        self._tool_factories[tool_name] = factory
-
     def create_and_register_tool(self, tool_name: str, config=None) -> bool:
         """Create and register a tool by name using factories."""
         if tool_name in self._tools:
             return True
-
         if tool_name not in self._tool_factories:
             return False
-
         try:
             tool_instance = self._tool_factories[tool_name](config)
             if tool_instance:

@@ -1,6 +1,7 @@
 import glob
 from typing import Any, Mapping
 from .base_tool import BaseTool, ToolResult
+from pywen.core.tool_registry2 import register_tool
 
 CLAUDE_DESCRIPTION = """
 - Fast file pattern matching tool that works with any codebase size
@@ -11,28 +12,26 @@ CLAUDE_DESCRIPTION = """
 - You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches as a batch that are potentially useful.
 """
 
+@register_tool(name="glob", providers=["claude", "qwen",])
 class GlobTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="glob",
-            display_name="Find Files",
-            description="Find files using glob patterns",
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "pattern": {
-                        "type": "string",
-                        "description": "Glob pattern to match files (e.g., '*.py', '**/*.txt')"
-                    },
-                    "recursive": {
-                        "type": "boolean",
-                        "description": "Enable recursive search (default: true)",
-                        "default": True
-                    }
-                },
-                "required": ["pattern"]
+    name="glob"
+    display_name="Find Files"
+    description="Find files using glob patterns"
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "Glob pattern to match files (e.g., '*.py', '**/*.txt')"
+            },
+            "recursive": {
+                "type": "boolean",
+                "description": "Enable recursive search (default: true)",
+                "default": True
             }
-        )
+        },
+        "required": ["pattern"]
+    }
     
     async def execute(self, **kwargs) -> ToolResult:
         """Find files using glob pattern."""

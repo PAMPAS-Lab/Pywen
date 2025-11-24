@@ -241,7 +241,7 @@ class CodexAgent(BaseAgent):
 
 
 
-    async def _process_one_tool_call(self, tool_call) -> AsyncGenerator[Dict[str, Any], None]:
+    async def _process_one_tool_call(self, tool_call :ToolCall) -> AsyncGenerator[Dict[str, Any], None]:
         tool = self.tool_registry.get_tool(tool_call.name)
         if not tool:
             return
@@ -266,7 +266,6 @@ class CodexAgent(BaseAgent):
             yield {"type": "tool_result", "data": payload}
             return
         try:
-            print("tool_call: ", tool_call)
             results = await self.tool_executor.execute_tools([tool_call], self.type)
             result = results[0]
             payload = {"call_id": tool_call.call_id, 

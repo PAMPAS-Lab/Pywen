@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, override,Mapping 
 from pywen.tools.base_tool import BaseTool, ToolRiskLevel
 from pywen.utils.tool_basics import ToolResult
+from pywen.core.tool_registry2 import register_tool
 
 BEGIN_PATCH_MARKER = "*** Begin Patch"
 END_PATCH_MARKER = "*** End Patch"
@@ -459,18 +460,14 @@ def _apply_replacements(original_lines: List[str], reps: List[Tuple[int, int, Li
     out.extend(original_lines[cursor:])
     return out
 
+@register_tool(name = "apply_patch", providers=["codex"])
 class ApplyPatchTool(BaseTool):
-    def __init__(self):
-        mode = "custom" 
-        super().__init__(
-            name="apply_patch",
-            display_name="Apply Patch",
-            description= CUSTOM_DESCRIPTION if mode == "custom" else FUNCTION_DESCRIPTION,
-            parameter_schema= GRAMMAR_SCHEMA if mode == "custom" else FUNCTION_SCHEMA,
-            can_update_output=False,
-            risk_level=ToolRiskLevel.MEDIUM,
-        )
-        self.mode = mode
+    name = "apply_patch"
+    display_name="Apply Patch"
+    description= CUSTOM_DESCRIPTION
+    parameter_schema= GRAMMAR_SCHEMA
+    can_update_output=False
+    risk_level=ToolRiskLevel.MEDIUM
 
     def get_risk_level(self, **kwargs) -> ToolRiskLevel:
         if kwargs.get("dry_run", False):

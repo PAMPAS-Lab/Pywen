@@ -2,6 +2,7 @@ import os
 import re
 from typing import Any, Mapping
 from .base_tool import BaseTool, ToolResult
+from pywen.core.tool_registry2 import register_tool
 
 CLAUDE_DESCRIPTION = """
 A powerful search tool built on ripgrep
@@ -12,42 +13,40 @@ Usage:
 - Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")
 """
 
+@register_tool(name="grep", providers=["claude", "qwen",])
 class GrepTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="grep",
-            display_name="Search Text",
-            description="Search for text patterns in files",
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "pattern": {
-                        "type": "string",
-                        "description": "Text pattern to search for"
-                    },
-                    "path": {
-                        "type": "string", 
-                        "description": "File or directory path to search in"
-                    },
-                    "recursive": {
-                        "type": "boolean",
-                        "description": "Search recursively in subdirectories (default: false)",
-                        "default": False
-                    },
-                    "case_sensitive": {
-                        "type": "boolean",
-                        "description": "Case sensitive search (default: true)",
-                        "default": True
-                    },
-                    "regex": {
-                        "type": "boolean",
-                        "description": "Treat pattern as regular expression (default: false)",
-                        "default": False
-                    }
-                },
-                "required": ["pattern", "path"]
+    name="grep"
+    display_name="Search Text"
+    description="Search for text patterns in files"
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "pattern": {
+                "type": "string",
+                "description": "Text pattern to search for"
+            },
+            "path": {
+                "type": "string", 
+                "description": "File or directory path to search in"
+            },
+            "recursive": {
+                "type": "boolean",
+                "description": "Search recursively in subdirectories (default: false)",
+                "default": False
+            },
+            "case_sensitive": {
+                "type": "boolean",
+                "description": "Case sensitive search (default: true)",
+                "default": True
+            },
+            "regex": {
+                "type": "boolean",
+                "description": "Treat pattern as regular expression (default: false)",
+                "default": False
             }
-        )
+        },
+        "required": ["pattern", "path"]
+    }
     
     async def execute(self, **kwargs) -> ToolResult:
         """Search for text patterns."""

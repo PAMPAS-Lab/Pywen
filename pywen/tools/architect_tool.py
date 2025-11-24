@@ -4,6 +4,8 @@ from typing import List, Mapping,Any
 from pywen.tools.base_tool import BaseTool
 from pywen.utils.tool_basics import ToolResult
 from pywen.utils.llm_basics import LLMMessage
+from pywen.core.tool_registry2 import register_tool
+
 logger = logging.getLogger(__name__)
 
 DESCRIPTION = """
@@ -39,30 +41,26 @@ You have access to read-only tools for code exploration and analysis:
 Use these tools to understand the existing codebase before providing your analysis and recommendations.
 """
 
+@register_tool(name = "architect_tool", providers=["claude"])
 class ArchitectTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="architect_tool",
-            display_name="Architect",
-            description= DESCRIPTION,
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "prompt": {
-                        "type": "string",
-                        "description": "The technical request or coding task to analyze"
-                    },
-                    "context": {
-                        "type": "string",
-                        "description": "Optional context from previous conversation or system state",
-                        "default": ""
-                    }
-                },
-                "required": ["prompt"]
+    name="architect_tool"
+    display_name="Architect"
+    description= DESCRIPTION
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "prompt": {
+                "type": "string",
+                "description": "The technical request or coding task to analyze"
             },
-            can_update_output=False,
-        )
-        self._agent_registry = None
+            "context": {
+                "type": "string",
+                "description": "Optional context from previous conversation or system state",
+            "default": ""
+            }
+        },
+        "required": ["prompt"]
+    }
     
     def set_current_agent(self, agent):
         self.current_agent = agent

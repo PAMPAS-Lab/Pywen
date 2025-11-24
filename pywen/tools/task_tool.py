@@ -5,6 +5,7 @@ from typing import List, Mapping, Any
 from pywen.tools.base_tool import BaseTool
 from pywen.utils.tool_basics import ToolResult
 from pywen.utils.llm_basics import LLMMessage
+from pywen.core.tool_registry2 import register_tool
 
 logger = logging.getLogger(__name__)
 
@@ -74,34 +75,25 @@ You are a focused task agent for Claude Code. Your role is to complete the speci
 - Complete the task systematically and thoroughly
 """
 
+@register_tool(name="task_tool", providers=["claude",])
 class TaskTool(BaseTool):
-    """
-    Task Tool for launching sub-agent tasks with todo list management
-    Implements the TaskTool pattern from Kode
-    """
-    
-    def __init__(self):
-        super().__init__(
-            name="task_tool",
-            display_name="Task Agent",
-            description=CLAUDE_DESCRIPTION,
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "description": {
-                        "type": "string",
-                        "description": "A short (3-5 word) description of the task"
-                    },
-                    "prompt": {
-                        "type": "string",
-                        "description": "The detailed task for the agent to perform. Be specific about what information you need back."
-                    }
-                },
-                "required": ["description", "prompt"]
+    name="task_tool"
+    display_name="Task Agent"
+    description=CLAUDE_DESCRIPTION
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "description": {
+                "type": "string",
+                "description": "A short (3-5 word) description of the task"
             },
-            can_update_output=False,
-        )
-        self._agent_registry = None
+            "prompt": {
+                "type": "string",
+                "description": "The detailed task for the agent to perform. Be specific about what information you need back."
+            }
+        },
+        "required": ["description", "prompt"]
+    }
     
     def set_current_agent(self, agent):
         self.current_agent = agent

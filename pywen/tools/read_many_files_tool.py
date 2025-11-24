@@ -1,35 +1,34 @@
 import os
 from typing import Any, Mapping
 from .base_tool import BaseTool, ToolResult
+from pywen.core.tool_registry2 import register_tool
 
+@register_tool(name="read_many_files", providers=["claude", "qwen",])
 class ReadManyFilesTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="read_many_files",
-            display_name="Read Multiple Files",
-            description="Read content from multiple files",
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "paths": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of file paths to read"
-                    },
-                    "max_file_size": {
-                        "type": "integer",
-                        "description": "Maximum file size in bytes (default: 100KB)",
-                        "default": 102400
-                    },
-                    "encoding": {
-                        "type": "string",
-                        "description": "Text encoding (default: utf-8)",
-                        "default": "utf-8"
-                    }
-                },
-                "required": ["paths"]
+    name="read_many_files"
+    display_name="Read Multiple Files"
+    description="Read content from multiple files"
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of file paths to read"
+            },
+            "max_file_size": {
+                "type": "integer",
+                "description": "Maximum file size in bytes (default: 100KB)",
+                "default": 102400
+            },
+            "encoding": {
+                "type": "string",
+                "description": "Text encoding (default: utf-8)",
+                "default": "utf-8"
             }
-        )
+        },
+        "required": ["paths"]
+    }
     
     async def execute(self, **kwargs) -> ToolResult:
         """Read multiple files."""

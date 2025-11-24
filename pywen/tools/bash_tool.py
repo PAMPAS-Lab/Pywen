@@ -4,6 +4,7 @@ import locale
 import re
 from typing import Any, Mapping
 from .base_tool import BaseTool, ToolResult, ToolRiskLevel
+from pywen.core.tool_registry2 import register_tool
 
 CLAUDE_DESCRIPTION = """
 Executes a given bash command in a persistent shell session with optional timeout, 
@@ -36,43 +37,37 @@ Usage notes:
   - When issuing multiple commands, use the ';' or '&&' operator to separate them. DO NOT use newlines (newlines are ok in quoted strings).
   - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it.
 """
-
+@register_tool(name="bash", providers=["qwen", "claude",])
 class BashTool(BaseTool):
-    def __init__(self):
-        if os.name == "nt":
-            description = """Run commands in Windows Command Prompt (cmd.exe)"""
-        else:
-            description = """Run commands in a bash shell"""
-        
-        super().__init__(
-            name="bash",
-            display_name="Bash Command" if os.name != "nt" else "Windows Command",
-            description=description,
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": "The bash command to execute"
-                    }
-                },
-                "required": ["command"]
-            },
-            risk_level=ToolRiskLevel.LOW  # Default to low risk, will be elevated for dangerous commands
-        )
-        
-        # 检测系统编码
-        self._encoding = 'utf-8'
-        if os.name == "nt":
-            try:
-                # Windows 系统编码检测
-                self._encoding = locale.getpreferredencoding() or 'gbk'
-                if self._encoding.lower() in ['cp936', 'gbk']:
-                    self._encoding = 'gbk'
-                elif self._encoding.lower() in ['utf-8', 'utf8']:
-                    self._encoding = 'utf-8'
-            except:
+    if os.name == "nt":
+        description = """Run commands in Windows Command Prompt (cmd.exe)"""
+    else:
+        description = """Run commands in a bash shell"""
+    name="bash"
+    display_name="Bash Command" if os.name != "nt" else "Windows Command"
+    description=description
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "The bash command to execute"
+            }
+        },
+        "required": ["command"]
+    }
+    risk_level=ToolRiskLevel.LOW 
+    _encoding = 'utf-8'
+    if os.name == "nt":
+        try:
+            # Windows 系统编码检测
+            self._encoding = locale.getpreferredencoding() or 'gbk'
+            if self._encoding.lower() in ['cp936', 'gbk']:
                 self._encoding = 'gbk'
+            elif self._encoding.lower() in ['utf-8', 'utf8']:
+                self._encoding = 'utf-8'
+        except:
+            self._encoding = 'gbk'
     
     def get_risk_level(self, **kwargs) -> ToolRiskLevel:
         """Get risk level based on the command."""

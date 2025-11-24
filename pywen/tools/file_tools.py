@@ -2,8 +2,9 @@ import os
 from typing import Any, Mapping
 from pywen.ui.highlighted_content import HighlightedContentDisplay
 from .base_tool import BaseTool, ToolResult, ToolRiskLevel
+from pywen.core.tool_registry2 import register_tool
 
-CLAUDE_DESCRIPTION = """
+CLAUDE_DESCRIPTION_WRITE = """
 Writes a file to the local filesystem.
 
 Usage:
@@ -13,28 +14,26 @@ Usage:
 - NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
 - Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.
 """
+@register_tool(name="write_file", providers=["claude", "qwen",])
 class WriteFileTool(BaseTool):
-    def __init__(self):
-        super().__init__(
-            name="write_file",
-            display_name="Write File",
-            description="Write content to a file",
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the file"
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": "Content to write"
-                    }
-                },
-                "required": ["path", "content"]
+    name="write_file"
+    display_name="Write File"
+    description="Write content to a file"
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path to the file"
             },
-            risk_level=ToolRiskLevel.MEDIUM 
-        )
+            "content": {
+                "type": "string",
+                "description": "Content to write"
+            }
+        },
+        "required": ["path", "content"]
+    }
+    risk_level=ToolRiskLevel.MEDIUM 
 
     async def _generate_confirmation_message(self, **kwargs) -> str:
         """Generate detailed confirmation message with file preview."""
@@ -154,32 +153,59 @@ class WriteFileTool(BaseTool):
                     "summary": f"Successfully {'overwrote' if file_exists else 'created'} {path} ({lines_count} lines, {len(content)} characters\ncontent:{content})"
                 }
             )
-        
         except Exception as e:
             return ToolResult(call_id="", error=f"Error writing to file: {str(e)}")
 
+    def build(self, provider:str = "", func_type: str = "") -> Mapping[str, Any]:
+        if provider.lower() == "claude" or provider.lower() == "anthropic":
+            res = {
+                "name": self.name,
+                "description": CLAUDE_DESCRIPTION_WRITE,
+                "input_schema": self.parameter_schema,
+            }
+        else:
+            res = {
+                "type": "function",
+                "function": {
+                    "name": self.name,
+                    "description": self.description,
+                    "parameters": self.parameter_schema
+                }
+            }
+        return res
 
+CLAUDE_DESCRIPTION_READ = """
+eads a file from the local filesystem. You can access any file directly by using this tool.
+
+Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+
+Usage:
+- The file_path parameter must be an absolute path, not a relative path
+- By default, it reads up to 2000 lines starting from the beginning of the file
+- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
+- Any lines longer than 2000 characters will be truncated
+- Results are returned using cat -n format, with line numbers starting at 1
+- You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.
+- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.
+"""
+
+@register_tool(name="read_file", providers=["claude", "qwwen",])
 class ReadFileTool(BaseTool):
-    """Tool for reading files."""
-
-    def __init__(self):
-        super().__init__(
-            name="read_file",
-            display_name="Read File",
-            description="Read content from a file",
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "path": {
-                        "type": "string",
-                        "description": "Path to the file"
+    name="read_file"
+    display_name="Read File"
+    description="Read content from a file"
+    parameter_schema={
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path to the file"
                     }
                 },
-                "required": ["path"]
-            },
-            risk_level=ToolRiskLevel.SAFE
-        )
-    
+            "required": ["path"]
+            }
+    risk_level=ToolRiskLevel.SAFE
+
     async def execute(self, **kwargs) -> ToolResult:
         """Read content from a file."""
         path = kwargs.get("path")
@@ -203,7 +229,7 @@ class ReadFileTool(BaseTool):
         if provider.lower() == "claude" or provider.lower() == "anthropic":
             res = {
                 "name": self.name,
-                "description": CLAUDE_DESCRIPTION,
+                "description": CLAUDE_DESCRIPTION_READ,
                 "input_schema": self.parameter_schema,
             }
         else:

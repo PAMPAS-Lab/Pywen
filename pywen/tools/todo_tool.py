@@ -1,9 +1,11 @@
 import json
+import uuid
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
 from pywen.tools.base_tool import BaseTool
 from pywen.utils.tool_basics import ToolResult
+from pywen.core.tool_registry2 import register_tool
 
 DESCRIPTION = """
 Use this tool to create and manage a structured task list for your current coding session. 
@@ -328,54 +330,43 @@ class TodoStorage:
             logger.error(f"Error saving todos: {e}")
             raise
 
+@register_tool(name="todo_write", providers=["claude"]) 
 class TodoTool(BaseTool):
-    def __init__(self, agent_id: str):
-        if agent_id is not None and not isinstance(agent_id, str):
-            agent_id = None
-
-        # Generate a proper agent_id
-        if agent_id is None:
-            import uuid
-            agent_id = f"claude_code_{str(uuid.uuid4())[:8]}"
-
-        super().__init__(
-            name="todo_write",
-            display_name="Todo Manager",
-            description=DESCRIPTION,
-            parameter_schema={
-                "type": "object",
-                "properties": {
-                    "todos": {
-                        "type": "array",
-                        "description": "The updated todo list",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": {
-                                    "type": "string",
-                                    "description": "Unique identifier for the task"
-                                },
-                                "content": {
-                                    "type": "string",
-                                    "description": "The task description or content"
-                                },
-                                "status": {
-                                    "type": "string",
-                                    "enum": ["pending", "in_progress", "completed"],
-                                    "description": "Current status of the task"
-                                }
+    agent_id = f"claude_code_{str(uuid.uuid4())[:8]}"
+    name="todo_write"
+    display_name="Todo Manager"
+    description=DESCRIPTION
+    parameter_schema={
+        "type": "object",
+        "properties": {
+            "todos": {
+                "type": "array",
+                "description": "The updated todo list",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Unique identifier for the task"
                             },
-                            "required": ["id", "content", "status"]
-                        }
+                        "content": {
+                            "type": "string",
+                            "description": "The task description or content"
+                            },
+                        "status": {
+                            "type": "string",
+                            "enum": ["pending", "in_progress", "completed"],
+                            "description": "Current status of the task"
+                            }
+                        },
+                    "required": ["id", "content", "status"]
                     }
-                },
-                "required": ["todos"]
+                }
             },
-            can_update_output=False,
-        )
-        self.agent_id = agent_id
-        self.storage = TodoStorage(agent_id)
-    
+            "required": ["todos"]
+    }
+    storage = TodoStorage(agent_id)
+
     def is_risky(self, **kwargs) -> bool:
         return False
     
