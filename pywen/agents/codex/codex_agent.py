@@ -5,8 +5,10 @@ from pydantic import BaseModel
 from pywen.agents.base_agent import BaseAgent
 from pywen.llm.llm_client import LLMClient 
 from pywen.utils.tool_basics import ToolCall
+from pywen.utils.llm_basics import LLMMessage
 from pywen.config.token_limits import TokenLimits 
 from pywen.core.session_stats import session_stats
+from pywen.core.tool_registry2 import list_tools_for_provider, get_tool
 
 MessageRole = Literal["system", "developer", "user", "assistant"]
 HistoryItem = Dict[str, Any]
@@ -51,19 +53,11 @@ class CodexAgent(BaseAgent):
         self.turn_cnt_max = config.max_turns
         self.turn_index = 0
         self.history: History = History(system_prompt= self._build_system_prompt())
-        self.tools = self.tools_format_convert()
+        self.tools = [tool.build("codex") for tool in list_tools_for_provider("codex")]
         self.current_task = None
 
     def get_enabled_tools(self) -> List[str]:
         return ['shell_tool', 'update_plan', 'apply_patch',]
-
-    def tools_format_convert(self) -> list:
-        tool_list = []
-        tools = self.tool_registry.list_tools()
-        for t in tools:
-            codex_tool = t.build()
-            tool_list.append(codex_tool)
-        return tool_list
 
     def build_environment_context(self, cwd: str, approval_policy: str = "on-request", 
             sandbox_mode: str = "workspace-write", network_access: str = "restricted", shell: str = "zsh", ) -> Dict:
@@ -126,7 +120,6 @@ class CodexAgent(BaseAgent):
     def record_turn_messages(self, messages: List[Dict[str, Any]], responses) -> None:
         """记录每轮的消息到轨迹记录器"""
         #1. 转换messages格式, pydantic -> dict
-        from pywen.utils.llm_basics import LLMMessage
         converted_messages = []
         llm_msg = None
         for msg in messages:
@@ -242,7 +235,7 @@ class CodexAgent(BaseAgent):
 
 
     async def _process_one_tool_call(self, tool_call :ToolCall) -> AsyncGenerator[Dict[str, Any], None]:
-        tool = self.tool_registry.get_tool(tool_call.name)
+        tool = get_tool(tool_call.name)
         if not tool:
             return
         if not self.cli_console:
@@ -252,7 +245,7 @@ class CodexAgent(BaseAgent):
         if isinstance(tool_call.arguments, Mapping):
             confirm_tool_call.arguments = dict(tool_call.arguments)
         elif isinstance(tool_call.arguments, str) and tool_call.name == "apply_patch":
-            confirm_tool_call.arguments = {"patch": tool_call.arguments}
+            confirm_tool_call.arguments = {"input": tool_call.arguments}
 
         confirmed = await self.cli_console.confirm_tool_call(confirm_tool_call, tool)
         if not confirmed:
@@ -266,8 +259,7 @@ class CodexAgent(BaseAgent):
             yield {"type": "tool_result", "data": payload}
             return
         try:
-            results = await self.tool_executor.execute_tools([tool_call], self.type)
-            result = results[0]
+            result = await tool.execute(**confirm_tool_call.arguments)
             payload = {"call_id": tool_call.call_id, 
                        "name": tool_call.name, 
                        "result": result.result,

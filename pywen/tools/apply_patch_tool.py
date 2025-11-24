@@ -482,7 +482,7 @@ class ApplyPatchTool(BaseTool):
         return f"[{mode}] Apply patch to workspace: {wd}"
 
     async def execute(self, **kwargs) -> ToolResult:
-        patch_text : str = kwargs.get("input") or kwargs.get("patch") or ""
+        patch_text : str = kwargs.get("input")  or ""
         workdir = Path(kwargs.get("workdir") or os.getcwd()).resolve()
         allow_heredoc = bool(kwargs.get("allow_heredoc", False))
         dry_run = bool(kwargs.get("dry_run", False))

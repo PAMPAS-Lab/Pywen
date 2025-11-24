@@ -1,62 +1,33 @@
-"""Base Agent implementation for shared components."""
-
 import asyncio
 import fnmatch
 from typing import Callable, Iterable, Optional, AsyncGenerator
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
-
 from pywen.config.config import AppConfig, MCPConfig
 from pywen.ui.cli_console import CLIConsole
 from pywen.core.trajectory_recorder import TrajectoryRecorder
-from pywen.core.tool_registry import ToolRegistry
-from pywen.core.tool_executor import ToolExecutor
 from pywen.utils.llm_basics import LLMMessage
 from pywen.tools.mcp_tool import MCPServerManager, sync_mcp_server_tools_into_registry
 from pywen.hooks.manager import HookManager
-
+from pywen.core.tool_registry2 import list_tools_for_provider
 
 class BaseAgent(ABC):
-    """Base class providing shared components for all agent implementations."""
-    
     def __init__(self, config: AppConfig, hook_mgr:HookManager, cli_console: Optional[CLIConsole] =None):
         self.config = config
         self.cli_console = cli_console
         self.type = "BaseAgent"
-
         self.conversation_history: List[LLMMessage] = []
-        
         self.trajectory_recorder = TrajectoryRecorder()
-        
-        self.tool_registry = ToolRegistry()
-        self.setup_tools()
-        
-        self.tool_executor = ToolExecutor(self.tool_registry)
-
         self._closed = False 
         self._mcp_mgr = None
         self._mcp_init_lock = asyncio.Lock()
 
         self.hook_mgr = hook_mgr
 
-    def setup_tools(self):
-        enabled_tools = self.get_enabled_tools()
-        registered_tools = self.tool_registry.register_tools_by_names(enabled_tools, self.config)
-        failed_tools = set(enabled_tools) - set(registered_tools)
-        if failed_tools and self.cli_console:
-            for tool_name in failed_tools:
-                self.cli_console.print(f"Failed to register tool: {tool_name}", "yellow")
-
     async def setup_tools_mcp(self):
         """Setup tools based on agent configuration."""
         
         await self._ensure_mcp_synced()
-    
-    
-    @abstractmethod
-    def get_enabled_tools(self) -> List[str]:
-        """Return list of enabled tool names for this agent."""
-        pass
     
     def get_tool_configs(self) -> Dict[str, Dict[str, Any]]:
         """Return tool-specific configurations. Override if needed."""

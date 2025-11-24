@@ -8,9 +8,8 @@ class ToolCall:
     """Represents a tool call from the LLM."""
     call_id: str
     name: str
-    arguments: Optional[Dict[str, Any]] = None
+    arguments: Optional[Dict[str, Any] | str] = None
     type: Optional[str] = None
-    input: Optional[str] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -19,7 +18,6 @@ class ToolCall:
             "name": self.name,
             "arguments": self.arguments,
             "type" : self.type,
-            "input": self.input
         }
 
     @classmethod
@@ -33,7 +31,6 @@ class ToolCall:
             name=data["name"],
             arguments=args,
             type=data.get("type"),
-            input=data.get("input", "")
         )
 
 class ToolStatus(Enum):

@@ -134,8 +134,6 @@ class BannerView:
         return gradient
 
     def show(self):
-        import time
-        time.sleep(100)
         os.system('cls' if os.name == 'nt' else 'clear')
 
         ascii_logo = [

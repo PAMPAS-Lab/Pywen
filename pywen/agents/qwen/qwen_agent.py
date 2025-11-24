@@ -10,6 +10,7 @@ from pywen.config.token_limits import TokenLimits
 from pywen.core.session_stats import session_stats
 from pywen.hooks.models import HookEvent
 from pywen.utils.llm_basics import LLMResponse, ToolCall
+from pywen.core.tool_registry2 import list_tools_for_provider, get_tool
 
 SYSTEM_PROMPT = f"""You are PYWEN, an interactive CLI agent who is created by PAMPAS-Lab, specializing in software engineering tasks. Your primary goal is to help users safely and efficiently, adhering strictly to the following instructions and utilizing your available tools.
 
@@ -302,19 +303,16 @@ class QwenAgent(BaseAgent):
         super().__init__(config, hook_mgr, cli_console)
         self.type = "QwenAgent"
         session_stats.set_current_agent(self.type)
-        self.max_task_turns = getattr(config, 'max_task_turns', 5)
         self.current_turn_index = 0
         self.original_user_task = ""
         self.max_turns = config.max_turns
         self.loop_detector = AgentLoopDetectionService()
-        #self.task_continuation_checker = TaskContinuationChecker(self.llm_client)
         self.system_prompt = self.get_core_system_prompt()
         self.llm_client = LLMClient(config.active_model)
         self.conversation_history = self._update_system_prompt(self.system_prompt)
     
     async def run(self, user_message: str) -> AsyncGenerator[Dict[str, Any], None]:
         """Run agent with streaming output and task continuation."""
-        await self.setup_tools_mcp()
         model_name = self.config.active_model.model or ""
         max_tokens = TokenLimits.get_limit("qwen", model_name)
         #TODO，从console剥离
@@ -335,16 +333,11 @@ class QwenAgent(BaseAgent):
 
         self.conversation_history.append(LLMMessage(role="user", content=user_message))
 
-        while self.current_turn_index < self.max_task_turns:
+        while self.current_turn_index < self.max_turns:
             #data = {"message": user_message, "turn": self.current_turn_index, "reason": "Continuing task based on LLM decision" }
             #yield {"type": "task_continuation", "data": data}
             async for event in self._process_turn_stream():
                 yield event
-
-    def get_enabled_tools(self) -> List[str]:
-        """Return list of enabled tool names for QwenAgent."""
-        return ['read_file', 'write_file',  'edit_file', 'read_many_files',
-            'ls', 'grep', 'glob', 'bash', 'web_fetch', 'web_search', 'memory']
 
     def _convert_single_message(self, msg: LLMMessage) -> Dict[str, Any]:
         role = msg.role
@@ -382,7 +375,7 @@ class QwenAgent(BaseAgent):
     async def _process_turn_stream(self) -> AsyncGenerator[Dict[str, Any], None]:
         messages = [self._convert_single_message(msg) for msg in self.conversation_history]
         trajectory_msg = self.conversation_history.copy()
-        tools = [tool.build() for tool in self.tool_registry.list_tools()]
+        tools = [tool.build("qwen") for tool in list_tools_for_provider("qwen")]
         completed_resp : LLMResponse = LLMResponse(content = "")
         async for event in self.llm_client.astream_response(messages= messages, tools= tools, api = "chat"):
             if event.type == "created":
@@ -435,7 +428,7 @@ class QwenAgent(BaseAgent):
     async def _process_tool_calls(self, tool_calls : List[ToolCall]) -> AsyncGenerator[Dict[str, Any], None]:
         # 2. 执行工具调用，拿到结果，填充tool LLMMessage
         for tc in tool_calls:
-            tool = self.tool_registry.get_tool(tc.name)
+            tool = get_tool(tc.name)
             if not tool:
                 continue
             confirmation_details = await tool.get_confirmation_details(name = tc.name, args = tc.arguments)
@@ -458,8 +451,7 @@ class QwenAgent(BaseAgent):
                     continue
 
             #实际上这里是单个执行
-            results = await self.tool_executor.execute_tools([tc], self.type)
-            res= results[0]
+            res = await tool.execute()
             data = { 
                     "call_id": tc.call_id, 
                     "name": tc.name, 
@@ -470,7 +462,7 @@ class QwenAgent(BaseAgent):
                     }
             yield {"type": "tool_result", "data": data}
             content = res.result if isinstance(res.success, str) else json.dumps(res.result)
-            tool_msg = LLMMessage(role="tool", content= content, tool_call_id=tc.call_id)
+            tool_msg = LLMMessage(role="tool", content= str(content), tool_call_id=tc.call_id)
             self.conversation_history.append(tool_msg)
 
     def _update_system_prompt(self, system_prompt: str) -> List[LLMMessage]:
@@ -485,13 +477,11 @@ class QwenAgent(BaseAgent):
 
     def _build_system_prompt(self) -> str:
         """Build system prompt with tool descriptions."""
-        available_tools = self.tool_registry.list_tools()
+        available_tools = list_tools_for_provider("qwen")
         system_prompt = SYSTEM_PROMPT 
         for tool in available_tools:
             system_prompt += f"- **{tool.name}**: {tool.description}\n"
-            if not hasattr(tool, 'parameters') or tool.parameters:
-                continue
-            params = tool.parameters.get('properties', {})
+            params = tool.parameter_schema.get('properties', {})
             if not params:
                 continue
             param_list = ", ".join(params.keys())
