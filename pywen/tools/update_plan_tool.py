@@ -80,7 +80,6 @@ class UpdatePlanTool(BaseTool):
                 "required": ["plan"],
                 "additionalProperties": False,
             },
-            is_output_markdown=True,
             risk_level=ToolRiskLevel.SAFE,
         )
 
@@ -107,7 +106,7 @@ class UpdatePlanTool(BaseTool):
 
         return ToolResult(call_id="", result=md, metadata={"payload": payload})
 
-    def build(self) -> Mapping[str, Any]:
+    def build(self, provider:str = "", func_type: str = "") -> Mapping[str, Any]:
         """ codex专用 """
         return {
                 "type" : "function",

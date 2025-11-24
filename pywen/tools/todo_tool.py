@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping
 from pywen.tools.base_tool import BaseTool
 from pywen.utils.tool_basics import ToolResult
 
@@ -329,9 +329,8 @@ class TodoStorage:
             raise
 
 class TodoTool(BaseTool):
-    def __init__(self, agent_id: str, config=None):
+    def __init__(self, agent_id: str):
         if agent_id is not None and not isinstance(agent_id, str):
-            config = agent_id
             agent_id = None
 
         # Generate a proper agent_id
@@ -372,9 +371,7 @@ class TodoTool(BaseTool):
                 },
                 "required": ["todos"]
             },
-            is_output_markdown=False,
             can_update_output=False,
-            config=config
         )
         self.agent_id = agent_id
         self.storage = TodoStorage(agent_id)
@@ -482,7 +479,7 @@ class TodoTool(BaseTool):
 
         return "\n".join(lines)
 
-    def build(self) -> Dict[str, Any]:
+    def build(self, provider:str = "", func_type: str = "") -> Mapping[str, Any]:
         """ claude 专用 """
         return {
             "name": self.name,

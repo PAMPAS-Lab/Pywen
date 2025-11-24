@@ -5,7 +5,6 @@ from typing import Dict, List, Any, AsyncGenerator
 from pywen.agents.base_agent import BaseAgent
 from pywen.utils.llm_basics import LLMMessage
 from pywen.llm.llm_client import LLMClient
-from pywen.agents.qwen.task_continuation_checker import TaskContinuationChecker, TaskContinuationResponse
 from pywen.agents.qwen.loop_detection_service import AgentLoopDetectionService
 from pywen.config.token_limits import TokenLimits
 from pywen.core.session_stats import session_stats

@@ -152,7 +152,7 @@ class CodexShellTool(BaseTool):
         except Exception as e:
             return ToolResult(call_id="", error=f"Shell execution error: {e}")
 
-    def build(self) -> Mapping[str, Any]:
+    def build(self, provider:str = "", func_type: str = "") -> Mapping[str, Any]:
         """ codex专用 """
         return {
             "type": "function",

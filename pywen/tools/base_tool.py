@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional,Mapping
 from enum import Enum
 from pywen.utils.tool_basics import ToolCallConfirmationDetails, ToolResult
-from pywen.config.config import AppConfig
 
 class ToolRiskLevel(Enum):
     """Tool risk levels for permission control."""
@@ -20,18 +19,14 @@ class BaseTool(ABC):
         display_name: str,
         description: str,
         parameter_schema: Dict[str, Any],
-        is_output_markdown: bool = False,
         can_update_output: bool = False,
-        config: Optional[AppConfig] = None,
         risk_level: ToolRiskLevel = ToolRiskLevel.SAFE,
     ):
         self.name = name
         self.display_name = display_name
         self.description = description
         self.parameter_schema = parameter_schema
-        self.is_output_markdown = is_output_markdown
         self.can_update_output = can_update_output
-        self.config = config
         self.risk_level = risk_level
     
     @abstractmethod
@@ -83,14 +78,7 @@ class BaseTool(ABC):
         }
 
     @abstractmethod
-    def build(self) -> Mapping[str, Any]:
-        return {
-                "type": "function",
-                "function": {
-                    "name": self.name,
-                    "description": self.description,
-                    "parameters": self.parameter_schema
-                },
-        }
+    def build(self, provider:str = "", func_type: str = "") -> Mapping[str, Any]:
+        pass
 
 Tool = BaseTool

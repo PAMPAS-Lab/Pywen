@@ -207,22 +207,18 @@ class MCPRemoteTool(BaseTool):
         description: str,
         parameter_schema: Dict[str, Any],
         display_name: Optional[str] = None,
-        is_output_markdown: bool = False,
         can_update_output: bool = False,
-        config: Optional[Dict[str, Any]] = None
     ):
         super().__init__(
             name=name,
             display_name=display_name or name,
             description=description,
             parameter_schema=parameter_schema,
-            is_output_markdown=is_output_markdown,
             can_update_output=can_update_output,
-            config=config or {}
         )
         self._server = server
         self._manager = manager
-        self._save_images_dir = (self.config or {}).get("save_images_dir")
+        self._save_images_dir = "./"
 
     async def execute(self, **kwargs) -> ToolResult:
         # 远端调用
@@ -315,7 +311,6 @@ async def sync_mcp_server_tools_into_registry(
             description=desc,
             parameter_schema=schema,
             display_name=display,
-            is_output_markdown=False,
             can_update_output=False,
             config={"save_images_dir": save_images_dir} if save_images_dir else {}
         )

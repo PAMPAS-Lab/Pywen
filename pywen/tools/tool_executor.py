@@ -1,10 +1,7 @@
-"""Non-interactive tool executor."""
-
 from typing import List, Dict, Any
-
 from pywen.utils.tool_basics import ToolCall, ToolResult
-from pywen.core.tool_registry import ToolRegistry
-from pywen.core.tool_scheduler import CoreToolScheduler
+from pywen.tools.tool_registry import ToolRegistry
+from pywen.tools.tool_scheduler import CoreToolScheduler
 
 class ToolExecutor:
     """Non-interactive tool executor for batch processing."""

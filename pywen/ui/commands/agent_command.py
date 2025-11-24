@@ -98,13 +98,13 @@ class AgentCommand(BaseCommand):
         try:
             from pywen.agents.qwen.qwen_agent import QwenAgent
             from pywen.agents.research.google_research_agent import GeminiResearchDemo
-            from pywen.agents.claudecode.claude_code_agent import ClaudeCodeAgent
+            from pywen.agents.claude.claude_agent import ClaudeAgent
 
             if isinstance(agent, QwenAgent):
                 return "qwen"
             elif isinstance(agent, GeminiResearchDemo):
                 return "research"
-            elif isinstance(agent, ClaudeCodeAgent):
+            elif isinstance(agent, ClaudeAgent):
                 return "claude"
         except ImportError:
             pass
@@ -122,8 +122,8 @@ class AgentCommand(BaseCommand):
             from pywen.agents.research.google_research_agent import GeminiResearchDemo
             return GeminiResearchDemo(config)
         elif agent_type == "claude":
-            from pywen.agents.claudecode.claude_code_agent import ClaudeCodeAgent
-            return ClaudeCodeAgent(config, hook_mgr)
+            from pywen.agents.claude.claude_agent import ClaudeAgent
+            return ClaudeAgent(config, hook_mgr)
         elif agent_type == "codex":
             from pywen.agents.codex.codex_agent import CodexAgent 
             return CodexAgent(config, hook_mgr)

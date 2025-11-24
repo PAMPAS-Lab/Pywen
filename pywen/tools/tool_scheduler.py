@@ -1,17 +1,10 @@
-"""Core tool scheduler for managing tool execution."""
-
 import asyncio
 import uuid
-import sys
-from pathlib import Path
 from typing import List, Dict, Any
 from dataclasses import dataclass
-
-
 from pywen.utils.tool_basics import ToolCall, ToolResult
-from pywen.core.tool_registry import ToolRegistry
+from pywen.tools.tool_registry import ToolRegistry
 from pywen.core.session_stats import session_stats
-
 
 @dataclass
 class ScheduledTask:
@@ -21,7 +14,6 @@ class ScheduledTask:
     priority: int = 0
     max_retries: int = 3
     current_retry: int = 0
-
 
 class CoreToolScheduler:
     """Core scheduler for managing tool execution."""

@@ -11,16 +11,14 @@ from .prompts import ClaudeCodePrompts
 from .context_manager import ClaudeCodeContextManager
 from pywen.core.session_stats import session_stats
 from pywen.core.agent_registry import registry  as agent_registry
-
-from pywen.agents.claudecode.tools.tool_adapter import ToolAdapterFactory
 from pywen.config.manager import ConfigManager
-from pywen.agents.claudecode.system_reminder import (
+from pywen.agents.claude.system_reminder import (
     generate_system_reminders, emit_reminder_event, reset_reminder_session,
     get_system_reminder_start
 )
 from pywen.hooks.models import HookEvent
 
-class ClaudeCodeAgent(BaseAgent):
+class ClaudeAgent(BaseAgent):
 
     def __init__(self, config, hook_mgr, cli_console=None):
         super().__init__(config, hook_mgr, cli_console)
@@ -68,14 +66,9 @@ class ClaudeCodeAgent(BaseAgent):
         # 更换公用工具的工具描述
         current_tools = self.tool_registry.list_tools()
         adapted_tools = []
+        #TODO
         for tool in current_tools:
-            try:
-                # 使用适配器包装工具以符合Claude的要求
-                # 实际只是更改了描述
-                adapter = ToolAdapterFactory.create_adapter(tool)
-                adapted_tools.append(adapter)
-            except ValueError:
-                adapted_tools.append(tool)
+            adapted_tools.append(tool)
 
         self.tools = adapted_tools
 
@@ -270,7 +263,7 @@ class ClaudeCodeAgent(BaseAgent):
                 model=self.config.active_model.model or "claude-3",
                 tools=None,
                 current_task="quota_check",
-                agent_name="ClaudeCodeAgent"
+                agent_name="ClaudeAgent"
             )
 
             return bool(content)
@@ -317,7 +310,7 @@ class ClaudeCodeAgent(BaseAgent):
                 model=self.config.active_model.model or "claude-3",
                 tools=None,
                 current_task="topic_detection",
-                agent_name="ClaudeCodeAgent"
+                agent_name="ClaudeAgent"
             )
 
             if content:

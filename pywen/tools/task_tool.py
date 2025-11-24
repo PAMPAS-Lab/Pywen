@@ -80,7 +80,7 @@ class TaskTool(BaseTool):
     Implements the TaskTool pattern from Kode
     """
     
-    def __init__(self, config=None):
+    def __init__(self):
         super().__init__(
             name="task_tool",
             display_name="Task Agent",
@@ -99,9 +99,7 @@ class TaskTool(BaseTool):
                 },
                 "required": ["description", "prompt"]
             },
-            is_output_markdown=True,
             can_update_output=False,
-            config=config
         )
         self._agent_registry = None
     
@@ -266,8 +264,8 @@ class TaskTool(BaseTool):
     
     async def _create_sub_agent(self, parent_agent, task_id: str):
         """Create a sub-agent with restricted tools including todo management"""
-        from pywen.agents.claudecode.claude_code_agent import ClaudeCodeAgent
-        sub_agent = ClaudeCodeAgent(parent_agent.config, parent_agent.cli_console)
+        from pywen.agents.claude.claude_agent import ClaudeAgent
+        sub_agent = ClaudeAgent(parent_agent.config, parent_agent.cli_console)
         
         allowed_tools = self._get_task_tools(parent_agent.tools, task_id)
         sub_agent.tools = allowed_tools
@@ -307,7 +305,7 @@ class TaskTool(BaseTool):
             task_id=task_id
         )
 
-    def build(self) -> Mapping[str, Any]:
+    def build(self, provider:str = "", func_type: str = "") -> Mapping[str, Any]:
         """ claude 专用 """
         return {
             "name": self.name,

@@ -1,12 +1,14 @@
 """CLI Console for displaying agent progress."""
 from __future__ import annotations
 
-from typing import Optional, Any, Dict, Mapping
+import os
+from typing import Optional, Any, Dict
 from rich.console import Group
 from rich import get_console
 from rich.panel import Panel
 from rich.text import Text
 
+from pywen.tools.base_tool import ToolRiskLevel
 from pywen.core.permission_manager import PermissionLevel, PermissionManager
 from pywen.ui.highlighted_content import create_enhanced_tool_result_display
 from pywen.ui.highlighted_content import HighlightedContentDisplay
@@ -132,7 +134,8 @@ class BannerView:
         return gradient
 
     def show(self):
-        import os
+        import time
+        time.sleep(100)
         os.system('cls' if os.name == 'nt' else 'clear')
 
         ascii_logo = [
@@ -461,7 +464,6 @@ class ApprovalService:
             return True
 
         if tool:
-            from pywen.tools.base import ToolRiskLevel
             args = getattr(tool_call, 'arguments', None) or tool_call.get('arguments', {})
             risk_level = tool.get_risk_level(**args)
             if risk_level == ToolRiskLevel.SAFE:

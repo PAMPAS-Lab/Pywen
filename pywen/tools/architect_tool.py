@@ -40,7 +40,7 @@ Use these tools to understand the existing codebase before providing your analys
 """
 
 class ArchitectTool(BaseTool):
-    def __init__(self, config=None):
+    def __init__(self):
         super().__init__(
             name="architect_tool",
             display_name="Architect",
@@ -60,9 +60,7 @@ class ArchitectTool(BaseTool):
                 },
                 "required": ["prompt"]
             },
-            is_output_markdown=True,
             can_update_output=False,
-            config=config
         )
         self._agent_registry = None
     
@@ -224,10 +222,10 @@ class ArchitectTool(BaseTool):
     async def _create_architect_agent(self, parent_agent):
         """Create an architect sub-agent with read-only tools"""
         # Import here to avoid circular imports
-        from pywen.agents.claudecode.claude_code_agent import ClaudeCodeAgent
+        from pywen.agents.claude.claude_agent import ClaudeAgent
         
         # Create architect sub-agent instance
-        architect_agent = ClaudeCodeAgent(parent_agent.config, parent_agent.cli_console)
+        architect_agent = ClaudeAgent(parent_agent.config, parent_agent.cli_console)
         
         # Set read-only tools only
         allowed_tools = self._get_architect_tools(parent_agent.tools)
@@ -250,7 +248,7 @@ class ArchitectTool(BaseTool):
         """Get system prompt for architect"""
         return ARCHITECT_SYSTEM_PROMPT 
 
-    def build(self) -> Mapping[str, Any]:
+    def build(self, provider:str = "", func_type : str = "") -> Mapping[str, Any]:
         """ claude 专用 """
         return {
             "name": self.name,

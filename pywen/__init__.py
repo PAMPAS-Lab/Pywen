@@ -5,7 +5,7 @@ from .agents.qwen.turn import Turn
 from .core.tool_scheduler import CoreToolScheduler
 from .core.tool_executor import ToolExecutor
 from .config.config import AppConfig, ModelConfig
-from .tools.base import Tool
+from .tools.base_tool import Tool
 from .utils.tool_basics import ToolCall, ToolResult
 from .config.token_limits import TokenLimits
 

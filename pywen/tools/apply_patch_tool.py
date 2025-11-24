@@ -447,7 +447,6 @@ def _compute_replacements(
     replacements.sort(key=lambda t: t[0])
     return replacements
 
-
 def _apply_replacements(original_lines: List[str], reps: List[Tuple[int, int, List[str]]]) -> List[str]:
     out: List[str] = []
     cursor = 0
@@ -461,16 +460,14 @@ def _apply_replacements(original_lines: List[str], reps: List[Tuple[int, int, Li
     return out
 
 class ApplyPatchTool(BaseTool):
-    def __init__(self, config: Optional[Any] = None):
-        mode = "custom" if config and "codex" in config.active_model.model.lower() else "function"
+    def __init__(self):
+        mode = "custom" 
         super().__init__(
             name="apply_patch",
             display_name="Apply Patch",
             description= CUSTOM_DESCRIPTION if mode == "custom" else FUNCTION_DESCRIPTION,
             parameter_schema= GRAMMAR_SCHEMA if mode == "custom" else FUNCTION_SCHEMA,
-            is_output_markdown=False,
             can_update_output=False,
-            config=config,
             risk_level=ToolRiskLevel.MEDIUM,
         )
         self.mode = mode
@@ -567,9 +564,9 @@ class ApplyPatchTool(BaseTool):
                     summary="apply_patch crashed",
             )
 
-    def build(self) -> Mapping[str, Any]:
+    def build(self, provider:str = "", func_type : str = "") -> Mapping[str, Any]:
         """ codex专用 """
-        if self.mode == "custom":
+        if func_type == "" or func_type.lower() == "custom"  or func_type.lower() == "freeform":
             return {
                     "type" : "custom",
                     "name" : self.name,

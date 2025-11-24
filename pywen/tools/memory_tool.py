@@ -162,8 +162,8 @@ class MemoryTool(BaseTool):
         except Exception as e:
             return ToolResult(call_id="", error=f"Error executing memory operation: {str(e)}")
 
-    def build(self) -> Mapping[str, Any]:
-        if self.config and self.config.active_model.provider == "claude":
+    def build(self, provider:str = "", func_type: str = "") -> Mapping[str, Any]:
+        if provider.lower() == "claude" or provider.lower() == "anthropic":
             res = {
                 "name": self.name,
                 "description": "",

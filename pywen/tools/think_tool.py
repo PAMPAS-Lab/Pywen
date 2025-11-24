@@ -39,9 +39,7 @@ class ThinkTool(BaseTool):
                 },
                 "required": ["thought"]
             },
-            is_output_markdown=False,
             can_update_output=False,
-            config=config
         )
         self._thoughts_log = []
     
@@ -92,7 +90,7 @@ class ThinkTool(BaseTool):
         """Get the most recent thoughts"""
         return self._thoughts_log[-count:] if self._thoughts_log else []
 
-    def build(self) -> Mapping[str, Any]:
+    def build(self, provider:str = "", func_type: str = "") -> Mapping[str, Any]:
         """ claude 专用 """
         return {
             "name": self.name,
