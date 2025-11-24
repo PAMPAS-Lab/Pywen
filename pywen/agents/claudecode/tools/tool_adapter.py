@@ -222,7 +222,6 @@ Usage:
                 adapters.append(adapter)
             except ValueError:
                 # If no Claude Code description is defined, use the original tool
-                # 狗屎代码
                 adapters.append(tool)
         
         return adapters

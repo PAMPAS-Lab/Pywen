@@ -1,4 +1,3 @@
-# mcp_tool.py
 import os
 import json
 import base64
@@ -6,15 +5,12 @@ import asyncio
 import shutil
 from typing import Any, Dict, Optional, Iterable, Callable, List 
 from datetime import datetime
-
-from anyio import create_unix_listener
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from pywen.tools.base import BaseTool
+from pywen.tools.base_tool import BaseTool
 from pywen.utils.tool_basics import ToolResult, ToolResultDisplay
 from pywen.core.tool_registry import ToolRegistry
-
 
 def _make_tool_result(
     call_id: str,
@@ -280,7 +276,11 @@ class MCPRemoteTool(BaseTool):
             },
             display_markdown=text,
         )
-
+    def build(self) -> Dict[str, Any]:
+        return {
+            "type": "function",
+            "function": self.get_function_declaration()
+        }
 
 async def sync_mcp_server_tools_into_registry(
     *,

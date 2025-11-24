@@ -1,10 +1,6 @@
-"""Codex-compatible Update Plan tool for Pywen.
-"""
-from typing import Any, Dict, List, Optional, Tuple, Mapping
 from enum import Enum
-
-from .base import BaseTool, ToolResult, ToolRiskLevel
-
+from typing import Any, Dict, List, Optional, Tuple, Mapping
+from .base_tool import BaseTool, ToolResult, ToolRiskLevel
 
 class PlanItemStatus(str, Enum):
     TODO = "todo"
@@ -12,7 +8,6 @@ class PlanItemStatus(str, Enum):
     DONE = "done"
     BLOCKED = "blocked"
     SKIPPED = "skipped"
-
 
 def _validate_plan_items(items: List[Dict[str, Any]]) -> Tuple[bool, Optional[str]]:
     """Check schema and 'single in_progress' constraint."""
@@ -34,7 +29,6 @@ def _validate_plan_items(items: List[Dict[str, Any]]) -> Tuple[bool, Optional[st
         return False, "At most one plan item can be 'in_progress'"
     return True, None
 
-
 def _render_markdown(explanation: Optional[str], items: List[Dict[str, Any]]) -> str:
     lines = ["# Updated Plan"]
     if explanation:
@@ -52,7 +46,6 @@ def _render_markdown(explanation: Optional[str], items: List[Dict[str, Any]]) ->
         em = status_emoji.get(s, "•")
         lines.append(f"- {em} **{it['step']}**  _({s})_")
     return "\n".join(lines)
-
 
 class UpdatePlanTool(BaseTool):
     """Update Plan tool compatible with Codex semantics."""
@@ -115,6 +108,7 @@ class UpdatePlanTool(BaseTool):
         return ToolResult(call_id="", result=md, metadata={"payload": payload})
 
     def build(self) -> Mapping[str, Any]:
+        """ codex专用 """
         return {
                 "type" : "function",
                 "name" : self.name,

@@ -1,14 +1,18 @@
-"""Web search tool using Serper API."""
-
 import asyncio
 import aiohttp
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional,Mapping
 from dataclasses import dataclass
-
-from .base import BaseTool, ToolResult
+from .base_tool import BaseTool, ToolResult
 from pywen.config.config import AppConfig
 
+CLAUDE_DESCRIPTION = """
+- Allows Claude to search the web and use the results to inform responses
+- Provides up-to-date information for current events and recent data
+- Returns search result information formatted as search result blocks
+- Use this tool for accessing information beyond Claude's knowledge cutoff
+- Searches are performed automatically within a single API call
+"""
 
 @dataclass
 class SearchResult:
@@ -18,10 +22,7 @@ class SearchResult:
     snippet: str
     position: int = 0
 
-
 class WebSearchTool(BaseTool):
-    """Tool for performing web searches using Serper API."""
-    
     def __init__(self, config: AppConfig):
         super().__init__(
             name="web_search",
@@ -106,7 +107,6 @@ class WebSearchTool(BaseTool):
         num_results = kwargs.get("num_results", 5)
         
         try:
-            # Prepare request
             headers = {
                 "X-API-KEY": self.api_key,
                 "Content-Type": "application/json"
@@ -115,11 +115,10 @@ class WebSearchTool(BaseTool):
             payload = {
                 "q": query,
                 "num": num_results,
-                "gl": "us",  # Country
-                "hl": "en"   # Language
+                "gl": "us",
+                "hl": "en"
             }
             
-            # Make API request
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.base_url,
@@ -137,7 +136,6 @@ class WebSearchTool(BaseTool):
                     
                     data = await response.json()
             
-            # Parse results
             search_results = self._parse_search_results(data)
             
             if not search_results:
@@ -146,7 +144,6 @@ class WebSearchTool(BaseTool):
                     result=f'No search results found for query: "{query}"'
                 )
             
-            # Format results
             formatted_results = self._format_search_results(query, search_results)
             
             return ToolResult(
@@ -195,25 +192,23 @@ class WebSearchTool(BaseTool):
             )
             results.append(search_result)
         
-        # Parse knowledge graph if available
         knowledge_graph = data.get("knowledgeGraph")
         if knowledge_graph:
             kg_result = SearchResult(
                 title=f"Knowledge Graph: {knowledge_graph.get('title', 'Information')}",
                 link=knowledge_graph.get("website", ""),
                 snippet=knowledge_graph.get("description", "Knowledge graph information"),
-                position=0  # Knowledge graph gets position 0
+                position=0
             )
             results.insert(0, kg_result)
         
-        # Parse answer box if available
         answer_box = data.get("answerBox")
         if answer_box:
             answer_result = SearchResult(
                 title=f"Answer: {answer_box.get('title', 'Direct Answer')}",
                 link=answer_box.get("link", ""),
                 snippet=answer_box.get("answer", answer_box.get("snippet", "Direct answer")),
-                position=0  # Answer box gets high priority
+                position=0
             )
             results.insert(0, answer_result)
         
@@ -222,14 +217,28 @@ class WebSearchTool(BaseTool):
     def _format_search_results(self, query: str, results: List[SearchResult]) -> str:
         """Format search results into a readable string."""
         formatted = f'Web search results for "{query}":\n\n'
-        
         for result in results:
             formatted += f"[{result.position}] {result.title}\n"
             formatted += f"🔗 {result.link}\n"
             formatted += f"📝 {result.snippet}\n\n"
-        
-        # Add summary
         formatted += f"Found {len(results)} results for your search query."
         
         return formatted
 
+    def build(self) -> Mapping[str, Any]:
+        if self.config and self.config.active_model.provider == "claude":
+            res = {
+                "name": self.name,
+                "description": CLAUDE_DESCRIPTION,
+                "input_schema": self.parameter_schema,
+            }
+        else:
+            res = {
+                "type": "function",
+                "function": {
+                    "name": self.name,
+                    "description": self.description,
+                    "parameters": self.parameter_schema
+                }
+            }
+        return res

@@ -1,13 +1,8 @@
-"""Enhanced tool registry matching TypeScript version."""
-
 import importlib
 from typing import Dict, List, Optional, Any, Callable
 from pywen.tools.base import BaseTool
 
-
 class ToolRegistry:
-    """Registry for managing available tools."""
-
     def __init__(self):
         self._tools: Dict[str, BaseTool] = {}
         self._tool_factories: Dict[str, Callable] = {}
@@ -48,25 +43,26 @@ class ToolRegistry:
         """Setup default tool factories for common tools."""
         self._tool_factories = {
             # File tools
-            'read_file': lambda config=None: self._import_and_create('pywen.tools.file_tools', 'ReadFileTool'),
-            'write_file': lambda config=None: self._import_and_create('pywen.tools.file_tools', 'WriteFileTool'),
-            'edit_file': lambda config=None: self._import_and_create('pywen.tools.edit_tool', 'EditTool'),
-            'read_many_files': lambda config=None: self._import_and_create('pywen.tools.read_many_files_tool', 'ReadManyFilesTool'),
+            'read_file': lambda config=None: self._import_and_create('pywen.tools.file_tools', 'ReadFileTool', config),
+            'write_file': lambda config=None: self._import_and_create('pywen.tools.file_tools', 'WriteFileTool', config),
+            'edit_file': lambda config=None: self._import_and_create('pywen.tools.edit_tool', 'EditTool', config),
+            'read_many_files': lambda config=None: self._import_and_create('pywen.tools.read_many_files_tool',
+                                                                           'ReadManyFilesTool', config),
 
             # File system tools
-            'ls': lambda config=None: self._import_and_create('pywen.tools.ls_tool', 'LSTool'),
-            'grep': lambda config=None: self._import_and_create('pywen.tools.grep_tool', 'GrepTool'),
-            'glob': lambda config=None: self._import_and_create('pywen.tools.glob_tool', 'GlobTool'),
+            'ls': lambda config=None: self._import_and_create('pywen.tools.ls_tool', 'LSTool', config),
+            'grep': lambda config=None: self._import_and_create('pywen.tools.grep_tool', 'GrepTool',config),
+            'glob': lambda config=None: self._import_and_create('pywen.tools.glob_tool', 'GlobTool', config),
 
             # System tools
-            'bash': lambda config=None: self._import_and_create('pywen.tools.bash_tool', 'BashTool'),
+            'bash': lambda config=None: self._import_and_create('pywen.tools.bash_tool', 'BashTool', config),
 
             # Web tools
-            'web_fetch': lambda config=None: self._import_and_create('pywen.tools.web_fetch_tool', 'WebFetchTool'),
+            'web_fetch': lambda config=None: self._import_and_create('pywen.tools.web_fetch_tool', 'WebFetchTool', config),
             'web_search': lambda config=None: self._import_and_create('pywen.tools.web_search_tool', 'WebSearchTool', config),
 
             # Memory tools
-            'memory': lambda config=None: self._import_and_create('pywen.tools.memory_tool', 'MemoryTool'),
+            'memory': lambda config=None: self._import_and_create('pywen.tools.memory_tool', 'MemoryTool', config),
 
             # Claude Code Agent specific tools
             'task_tool': lambda config=None: self._import_and_create('pywen.agents.claudecode.tools.task_tool', 'TaskTool', config),
@@ -75,8 +71,10 @@ class ToolRegistry:
             'think_tool': lambda config=None: self._import_and_create('pywen.agents.claudecode.tools.think_tool', 'ThinkTool', config),
 
             # codex
-            'shell_tool': lambda config: self._import_and_create('pywen.tools.codex_shell_tool', 'CodexShellTool'),
-            'update_plan': lambda config: self._import_and_create('pywen.tools.update_plan_tool', 'UpdatePlanTool'),
+            'shell_tool': lambda config: self._import_and_create('pywen.tools.codex_shell_tool', 'CodexShellTool',
+                                                                 config),
+            'update_plan': lambda config: self._import_and_create('pywen.tools.update_plan_tool', 'UpdatePlanTool',
+                                                                  config),
             'apply_patch': lambda config: self._import_and_create('pywen.tools.apply_patch_tool', 'ApplyPatchTool', config),
         }
 

@@ -1,14 +1,18 @@
-"""Text search tool."""
-
 import os
 import re
+from typing import Any, Mapping
+from .base_tool import BaseTool, ToolResult
 
-from .base import BaseTool, ToolResult
+CLAUDE_DESCRIPTION = """
+A powerful search tool built on ripgrep
 
+Usage:
+- ALWAYS use Grep for search tasks. NEVER invoke `grep` or `rg` as a Bash command. The Grep tool has been optimized for correct permissions and access.
+- Supports full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
+- Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")
+"""
 
 class GrepTool(BaseTool):
-    """Tool for searching text patterns in files."""
-    
     def __init__(self):
         super().__init__(
             name="grep",
@@ -56,21 +60,15 @@ class GrepTool(BaseTool):
         if not pattern:
             return ToolResult(call_id="", error="No pattern provided")
         
-        if not path:
+        if not path or not os.path.exists(path):
             return ToolResult(call_id="", error="No path provided")
         
         try:
-            if not os.path.exists(path):
-                return ToolResult(call_id="", error=f"Path not found: {path}")
-            
             results = []
-            
             if os.path.isfile(path):
-                # Search in single file
                 matches = self._search_in_file(path, pattern, case_sensitive, use_regex)
                 results.extend(matches)
             elif os.path.isdir(path):
-                # Search in directory
                 if recursive:
                     for root, dirs, files in os.walk(path):
                         for file in files:
@@ -83,7 +81,6 @@ class GrepTool(BaseTool):
                         if os.path.isfile(item_path):
                             matches = self._search_in_file(item_path, pattern, case_sensitive, use_regex)
                             results.extend(matches)
-            
             if not results:
                 return ToolResult(call_id="", result="No matches found")
             
@@ -95,7 +92,6 @@ class GrepTool(BaseTool):
     def _search_in_file(self, file_path: str, pattern: str, case_sensitive: bool, use_regex: bool) -> list:
         """Search for pattern in a single file."""
         results = []
-        
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 for line_num, line in enumerate(f, 1):
@@ -108,19 +104,35 @@ class GrepTool(BaseTool):
         return results
     
     def _match_line(self, line: str, pattern: str, case_sensitive: bool, use_regex: bool) -> bool:
-        """Check if line matches pattern."""
         if use_regex:
             flags = 0 if case_sensitive else re.IGNORECASE
             try:
                 return bool(re.search(pattern, line, flags))
             except re.error:
-                # Invalid regex, fall back to literal search
                 use_regex = False
-        
-        if not use_regex:
+        else:
             if case_sensitive:
                 return pattern in line
             else:
                 return pattern.lower() in line.lower()
         
         return False
+
+    def build(self) -> Mapping[str, Any]:
+        if self.config and self.config.active_model.provider == "claude":
+            res = {
+                "name": self.name,
+                "description": CLAUDE_DESCRIPTION,
+                "input_schema": self.parameter_schema,
+            }
+        else:
+            res = {
+                "type": "function",
+                "function": {
+                    "name": self.name,
+                    "description": self.description,
+                    "parameters": self.parameter_schema
+                }
+            }
+        return res
+

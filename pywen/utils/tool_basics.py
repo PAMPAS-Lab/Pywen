@@ -1,5 +1,3 @@
-"""Basic Tool data structures."""
-
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any
 from enum import Enum
@@ -65,7 +63,7 @@ class ToolCallConfirmationDetails:
 class ToolResult:
     """Enhanced tool result matching TypeScript version."""
     call_id: str
-    result: Optional[str] = None
+    result: Optional[str | Dict] = None
     error: Optional[str] = None
     display: Optional[ToolResultDisplay] = None
     metadata: Dict[str, Any] = field(default_factory=dict)

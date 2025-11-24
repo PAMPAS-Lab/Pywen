@@ -1,29 +1,50 @@
-"""
-Architect Tool - Technical analysis and implementation planning
-Based on claude_code_version/tools/ArchitectTool/ArchitectTool.tsx
-"""
 import logging
 import time
-from typing import List
-
-from pywen.tools.base import BaseTool
+from typing import List, Mapping,Any
+from pywen.tools.base_tool import BaseTool
 from pywen.utils.tool_basics import ToolResult
 from pywen.utils.llm_basics import LLMMessage
-
 logger = logging.getLogger(__name__)
 
+DESCRIPTION = """
+Your go-to tool for any technical or coding task. 
+Analyzes requirements and breaks them down into clear, 
+actionable implementation steps. 
+Use this whenever you need help planning how to implement a feature, 
+solve a technical problem, or structure your code.
+"""
+
+ARCHITECT_SYSTEM_PROMPT = """You are an expert software architect. 
+Your role is to analyze technical requirements and produce clear, actionable implementation plans.
+These plans will then be carried out by a junior software engineer so you need to be specific and detailed. 
+However do not actually write the code, just explain the plan.
+
+Follow these steps for each request:
+1. Carefully analyze requirements to identify core functionality and constraints
+2. Define clear technical approach with specific technologies and patterns
+3. Break down implementation into concrete, actionable steps at the appropriate level of abstraction
+
+Keep responses focused, specific and actionable.
+
+IMPORTANT: Do not ask the user if you should implement the changes at the end. 
+Just provide the plan as described above.
+IMPORTANT: Do not attempt to write the code or use any string modification tools. Just provide the plan.
+
+## Available Tools
+You have access to read-only tools for code exploration and analysis:
+- File reading and searching tools
+- Directory listing and globbing
+- Web search for research
+
+Use these tools to understand the existing codebase before providing your analysis and recommendations.
+"""
 
 class ArchitectTool(BaseTool):
-    """
-    Architect Tool for technical analysis and implementation planning
-    Specialized in code analysis and understanding with read-only tools
-    """
-    
     def __init__(self, config=None):
         super().__init__(
             name="architect_tool",
             display_name="Architect",
-            description="Your go-to tool for any technical or coding task. Analyzes requirements and breaks them down into clear, actionable implementation steps. Use this whenever you need help planning how to implement a feature, solve a technical problem, or structure your code.",
+            description= DESCRIPTION,
             parameter_schema={
                 "type": "object",
                 "properties": {
@@ -45,9 +66,8 @@ class ArchitectTool(BaseTool):
         )
         self._agent_registry = None
     
-    def set_agent_registry(self, agent_registry):
-        """Set the agent registry for creating sub-agents"""
-        self._agent_registry = agent_registry
+    def set_current_agent(self, agent):
+        self.current_agent = agent
     
     def is_risky(self, **kwargs) -> bool:
         """Architect tool is read-only and safe"""
@@ -57,44 +77,25 @@ class ArchitectTool(BaseTool):
         """
         Execute the architect tool for technical analysis
         """
-        # Extract parameters from kwargs
         prompt = kwargs.get('prompt', '')
         context = kwargs.get('context', '')
         
         try:
-            if not self._agent_registry:
-                return ToolResult(
-                    call_id="architect_tool",
-                    error="Agent registry not available. Cannot launch architect.",
-                    metadata={"error": "no_agent_registry"}
-                )
-            
             start_time = time.time()
-            
-            # Get the current agent (Claude Code Agent)
-            current_agent = self._agent_registry.current()
-            if not current_agent or current_agent.type != "ClaudeAgent":
+            if not self.current_agent or self.current_agent.type != "ClaudeAgent":
                 return ToolResult(
                     call_id="architect_tool",
                     error="Architect tool can only be used with Claude Code Agent",
                     metadata={"error": "invalid_agent_type"}
                 )
-            
-            # Create architect sub-agent with read-only tools
-            architect_agent = await self._create_architect_agent(current_agent)
-            
-            # Prepare the content with context if provided
+            architect_agent = await self._create_architect_agent(self.current_agent)
             content = f"<context>{context}</context>\n\n{prompt}" if context else prompt
-            
-            # Execute architect analysis with progress tracking
             result_parts = ["🏗️ **Architect Analysis**\n\n"]
             result_parts.append("|_ Initializing architect agent...\n")
             tool_use_count = 0
 
             try:
                 result_parts.append("|_ Starting analysis...\n\n")
-
-                # Run the architect with the given prompt
                 final_content = ""
                 analysis_completed = False
                 error_occurred = False
@@ -105,21 +106,20 @@ class ArchitectTool(BaseTool):
                         LLMMessage(role="user", content=content)
                     ],
                     system_prompt=self._get_architect_system_prompt(),
-                    max_iterations=3  # Limit iterations for architect
+                    max_iterations=3
                 ):
                     event_type = event.get("type", "")
 
                     if event_type == "content":
                         content_text = event.get("content", "")
-                        if content_text.strip():  # Only add non-empty content
+                        if content_text.strip():
                             result_parts.append(content_text)
-                            final_content += content_text  # Accumulate final content
+                            final_content += content_text
                     elif event_type == "tool_call_start":
                         tool_data = event.get("data", {})
                         tool_name = tool_data.get("name", "unknown")
                         tool_args = tool_data.get("arguments", {})
                         
-                        # 显示工具调用的详细信息
                         if tool_name == "read_file" and "file_path" in tool_args:
                             result_parts.append(f"|_ 📖 Reading file: {tool_args['file_path']}\n")
                         elif tool_name == "bash" and "command" in tool_args:
@@ -136,7 +136,7 @@ class ArchitectTool(BaseTool):
                         else:
                             result_parts.append(f"|_ 🔧 Using {tool_name} tool\n")
                         
-                        tool_use_count += 1  # Count tools when they start
+                        tool_use_count += 1
                     elif event_type == "tool_call_end":
                         tool_data = event.get("data", {})
                         tool_name = tool_data.get("name", "unknown")
@@ -240,37 +240,20 @@ class ArchitectTool(BaseTool):
         return architect_agent
     
     def _get_architect_tools(self, parent_tools: List[BaseTool]) -> List[BaseTool]:
-        """Get read-only tools for architect (file exploration only)"""
         allowed_tool_names = {
             'read_file', 'read_many_files', 'ls', 'grep', 'glob',
-            'web_fetch', 'web_search'  # Allow web access for research
+            'web_fetch', 'web_search' 
         }
-        
-        # Filter to read-only tools only
-        return [
-            tool for tool in parent_tools
-            if tool.name in allowed_tool_names
-        ]
+        return [tool for tool in parent_tools if tool.name in allowed_tool_names]
     
     def _get_architect_system_prompt(self) -> str:
         """Get system prompt for architect"""
-        return """You are an expert software architect. Your role is to analyze technical requirements and produce clear, actionable implementation plans.
-These plans will then be carried out by a junior software engineer so you need to be specific and detailed. However do not actually write the code, just explain the plan.
+        return ARCHITECT_SYSTEM_PROMPT 
 
-Follow these steps for each request:
-1. Carefully analyze requirements to identify core functionality and constraints
-2. Define clear technical approach with specific technologies and patterns
-3. Break down implementation into concrete, actionable steps at the appropriate level of abstraction
-
-Keep responses focused, specific and actionable.
-
-IMPORTANT: Do not ask the user if you should implement the changes at the end. Just provide the plan as described above.
-IMPORTANT: Do not attempt to write the code or use any string modification tools. Just provide the plan.
-
-## Available Tools
-You have access to read-only tools for code exploration and analysis:
-- File reading and searching tools
-- Directory listing and globbing
-- Web search for research
-
-Use these tools to understand the existing codebase before providing your analysis and recommendations."""
+    def build(self) -> Mapping[str, Any]:
+        """ claude 专用 """
+        return {
+            "name": self.name,
+            "description": self.description,
+            "input_schema": self.parameter_schema,
+        }

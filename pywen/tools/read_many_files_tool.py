@@ -1,13 +1,8 @@
-"""Tool for reading multiple files at once."""
-
 import os
-
-from .base import BaseTool, ToolResult
-
+from typing import Any, Mapping
+from .base_tool import BaseTool, ToolResult
 
 class ReadManyFilesTool(BaseTool):
-    """Read multiple files at once."""
-    
     def __init__(self):
         super().__init__(
             name="read_many_files",
@@ -56,13 +51,11 @@ class ReadManyFilesTool(BaseTool):
                     results.append(f"=== {path} ===\nError: File not found")
                     continue
                 
-                # Check file size
                 file_size = os.path.getsize(path)
                 if file_size > max_file_size:
                     results.append(f"=== {path} ===\nError: File too large ({file_size} bytes > {max_file_size} bytes)")
                     continue
                 
-                # Read file content
                 with open(path, "r", encoding=encoding, errors="ignore") as f:
                     content = f.read()
                 
@@ -75,3 +68,21 @@ class ReadManyFilesTool(BaseTool):
             return ToolResult(call_id="", result="No files could be read")
         
         return ToolResult(call_id="", result="\n\n".join(results))
+
+    def build(self) -> Mapping[str, Any]:
+        if self.config and self.config.active_model.provider == "claude":
+            res = {
+                "name": self.name,
+                "description": "",
+                "input_schema": self.parameter_schema,
+            }
+        else:
+            res = {
+                "type": "function",
+                "function": {
+                    "name": self.name,
+                    "description": self.description,
+                    "parameters": self.parameter_schema
+                }
+            }
+        return res

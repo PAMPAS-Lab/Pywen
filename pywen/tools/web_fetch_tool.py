@@ -1,12 +1,18 @@
-"""Web content fetching tool."""
-
 import asyncio
 import aiohttp
 import html
 import re
+from typing import Any, Mapping
+from .base_tool import BaseTool, ToolResult
 
-from .base import BaseTool, ToolResult
-
+CLAUDE_DESCRIPTION = """
+- Fetches content from a specified URL and processes it using an AI model
+- Takes a URL and a prompt as input
+- Fetches the URL content, converts HTML to markdown
+- Processes the content with the prompt using a small, fast model
+- Returns the model's response about the content
+- Use this tool when you need to retrieve and analyze web content
+"""
 
 class WebFetchTool(BaseTool):
     """Tool for fetching web content."""
@@ -111,3 +117,21 @@ class WebFetchTool(BaseTool):
             return ToolResult(call_id="", error=f"Timeout fetching {url}")
         except Exception as e:
             return ToolResult(call_id="", error=f"Error fetching {url}: {str(e)}")
+
+    def build(self) -> Mapping[str, Any]:
+        if self.config and self.config.active_model.provider == "claude":
+            res = {
+                "name": self.name,
+                "description": CLAUDE_DESCRIPTION,
+                "input_schema": self.parameter_schema,
+            }
+        else:
+            res = {
+                "type": "function",
+                "function": {
+                    "name": self.name,
+                    "description": self.description,
+                    "parameters": self.parameter_schema
+                }
+            }
+        return res

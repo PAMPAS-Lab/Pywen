@@ -28,7 +28,7 @@ class ClaudeCodeAgent(BaseAgent):
         self.llm_client = LLMClient(self.config.active_model)
         self.prompts = ClaudeCodePrompts()
         self.project_path = os.getcwd()
-        self.max_iterations = getattr(config, 'max_iterations', 10)
+        self.max_iterations = config.max_turns
 
         self.context_manager = ClaudeCodeContextManager(self.project_path)
         self.context = {}
@@ -59,11 +59,11 @@ class ClaudeCodeAgent(BaseAgent):
 
     def _setup_claude_code_tools(self):
         # 为具有开启Sub Agent能力的工具设定智能体类型
+        # TODO. 急需重构工具适配器体系
         task_tool = self.tool_registry.get_tool('task_tool')
-        task_tool.set_agent_registry(agent_registry)
-
+        task_tool.set_current_agent(self)
         architect_tool = self.tool_registry.get_tool('architect_tool')
-        architect_tool.set_agent_registry(agent_registry)
+        architect_tool.set_current_agent(self)
 
         # 更换公用工具的工具描述
         current_tools = self.tool_registry.list_tools()

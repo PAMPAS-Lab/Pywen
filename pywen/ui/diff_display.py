@@ -1,15 +1,11 @@
 """
 Diff display utilities for showing file changes in a user-friendly format.
 """
-
 import difflib
-from typing import List, Tuple, Optional
-from rich.console import Console
+from typing import List
 from rich.panel import Panel
 from rich.columns import Columns
 from rich.text import Text
-from rich.table import Table
-
 
 class DiffDisplay:
     """Utility class for displaying file diffs in various formats."""

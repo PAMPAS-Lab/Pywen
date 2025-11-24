@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, override,Mapping 
-from pywen.tools.base import BaseTool, ToolRiskLevel
+from pywen.tools.base_tool import BaseTool, ToolRiskLevel
 from pywen.utils.tool_basics import ToolResult
 
 BEGIN_PATCH_MARKER = "*** Begin Patch"
@@ -568,6 +568,7 @@ class ApplyPatchTool(BaseTool):
             )
 
     def build(self) -> Mapping[str, Any]:
+        """ codex专用 """
         if self.mode == "custom":
             return {
                     "type" : "custom",

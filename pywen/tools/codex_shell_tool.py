@@ -1,8 +1,8 @@
 import asyncio
 import os
 import shlex
-from typing import Any, Dict, List, Optional, override,Mapping
-from .base import BaseTool, ToolResult, ToolRiskLevel
+from typing import Any, List, Optional, override,Mapping
+from .base_tool import BaseTool, ToolResult, ToolRiskLevel
 
 def _assert_command_list(command: Any) -> List[str]:
     if not (isinstance(command, list) and all(isinstance(x, str) for x in command)):
@@ -153,6 +153,7 @@ class CodexShellTool(BaseTool):
             return ToolResult(call_id="", error=f"Shell execution error: {e}")
 
     def build(self) -> Mapping[str, Any]:
+        """ codex专用 """
         return {
             "type": "function",
             "name": self.name,

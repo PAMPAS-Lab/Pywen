@@ -1,14 +1,9 @@
-"""Memory tool for storing user preferences and facts."""
-
 import os
 from pathlib import Path
-
-from .base import BaseTool, ToolResult
-
+from typing import Any, Mapping
+from .base_tool import BaseTool, ToolResult
 
 class MemoryTool(BaseTool):
-    """Tool for remembering user-specific facts and preferences."""
-
     def __init__(self, project_id: str = None):
         super().__init__(
             name="memory",
@@ -166,3 +161,21 @@ class MemoryTool(BaseTool):
             return ToolResult(call_id="", error=str(e))
         except Exception as e:
             return ToolResult(call_id="", error=f"Error executing memory operation: {str(e)}")
+
+    def build(self) -> Mapping[str, Any]:
+        if self.config and self.config.active_model.provider == "claude":
+            res = {
+                "name": self.name,
+                "description": "",
+                "input_schema": self.parameter_schema,
+            }
+        else:
+            res = {
+                "type": "function",
+                "function": {
+                    "name": self.name,
+                    "description": self.description,
+                    "parameters": self.parameter_schema
+                }
+            }
+        return res

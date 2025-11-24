@@ -1,10 +1,8 @@
-"""Enhanced base tool classes matching TypeScript version."""
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional,Mapping
 from enum import Enum
 from pywen.utils.tool_basics import ToolCallConfirmationDetails, ToolResult
-
+from pywen.config.config import AppConfig
 
 class ToolRiskLevel(Enum):
     """Tool risk levels for permission control."""
@@ -12,7 +10,6 @@ class ToolRiskLevel(Enum):
     LOW = "low"             # 低风险操作，简单确认
     MEDIUM = "medium"       # 中等风险，详细确认
     HIGH = "high"           # 高风险操作，强制确认
-
 
 class BaseTool(ABC):
     """Enhanced base class matching TypeScript BaseTool."""
@@ -25,14 +22,13 @@ class BaseTool(ABC):
         parameter_schema: Dict[str, Any],
         is_output_markdown: bool = False,
         can_update_output: bool = False,
-        config: Optional[Any] = None,
+        config: Optional[AppConfig] = None,
         risk_level: ToolRiskLevel = ToolRiskLevel.SAFE,
     ):
         self.name = name
         self.display_name = display_name
         self.description = description
         self.parameter_schema = parameter_schema
-        self.parameters = parameter_schema  # Add alias for backward compatibility
         self.is_output_markdown = is_output_markdown
         self.can_update_output = can_update_output
         self.config = config
@@ -45,7 +41,6 @@ class BaseTool(ABC):
     
     def validate_parameters(self, **kwargs) -> bool:
         """Validate tool parameters."""
-        # Basic validation - can be overridden by subclasses
         return True
     
     def get_risk_level(self, **kwargs) -> ToolRiskLevel:
@@ -62,7 +57,6 @@ class BaseTool(ABC):
         if risk_level == ToolRiskLevel.SAFE:
             return None
 
-        # Generate detailed confirmation message
         confirmation_message = await self._generate_confirmation_message(**kwargs)
 
         return ToolCallConfirmationDetails(
@@ -88,9 +82,8 @@ class BaseTool(ABC):
             "parameters": self.parameter_schema
         }
 
-    #TODO. 重构完成后需要声明为 abstractmethod
+    @abstractmethod
     def build(self) -> Mapping[str, Any]:
-        """Build tool instance. To be implemented by subclasses."""
         return {
                 "type": "function",
                 "function": {
@@ -98,12 +91,6 @@ class BaseTool(ABC):
                     "description": self.description,
                     "parameters": self.parameter_schema
                 },
-            }
+        }
 
-# Alias for backward compatibility
 Tool = BaseTool
-
-
-
-
-
