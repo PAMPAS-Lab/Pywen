@@ -12,6 +12,7 @@ from pywen.hooks.manager import HookManager
 from pywen.hooks.models import HookEvent
 from pywen.tools.tool_manager import ToolManager 
 from pywen.cli.runtime import HeadlessRunner, InteractiveSession
+from pywen.skills import SkillsManager
 
 async def async_main() -> None:
     """Main CLI entry point."""
@@ -44,6 +45,11 @@ async def async_main() -> None:
 
     tool_mgr = ToolManager(perm_mgr=perm_mgr, hook_mgr=hook_mgr, cli=cli)
     tool_mgr.autodiscover()
+
+    skill_mgr = SkillsManager(cfg_mgr.get_pywen_config_dir())
+    oc = skill_mgr.skills_for_cwd()
+    for skill in oc.skills:
+        print(f"Loaded skill: {skill.name} - {skill.description}")
 
     await hook_mgr.emit(
         HookEvent.SessionStart,
