@@ -1,6 +1,5 @@
 """Pywen Agent implementation with streaming logic."""
 import os,subprocess, json
-from functools import lru_cache
 import platform, shutil
 from pathlib import Path
 from typing import Dict, List, Any, AsyncGenerator,Mapping
@@ -345,7 +344,6 @@ class PywenAgent(BaseAgent):
         self.type = "PywenAgent"
         session_stats.set_current_agent(self.type)
         self.current_turn_index = 0
-        self.original_user_task = ""
         self.max_turns = self.config_mgr.get_app_config().max_turns
         self.system_prompt = self.get_core_system_prompt()
         self.conversation_history = self._update_system_prompt(self.system_prompt)
@@ -357,9 +355,9 @@ class PywenAgent(BaseAgent):
         max_tokens = TokenLimits.get_limit("qwen", model_name)
         self.cli.set_max_context_tokens(max_tokens)
         await self.setup_tools_mcp()
-        self.original_user_task = user_message
         self.current_turn_index = 0
         session_stats.record_task_start(self.type)
+        #user_message = self.skills_prompt + "\n\n" + user_message
         self.trajectory_recorder.start_recording(
             task=user_message,
             provider=self.config_mgr.get_active_agent().provider or "",
@@ -559,7 +557,10 @@ class PywenAgent(BaseAgent):
         )
         env_prompt = self._build_runtime_env_prompt()
         style_prompt = self._build_pywen_md_prompt()
-        prompt = system_prompt.rstrip() + "\n\n" + style_prompt + "\n\n" + env_prompt + "\n\n" + cwd_prompt
+        prompt = system_prompt.rstrip() \
+                + "\n\n" + style_prompt \
+                + "\n\n" + env_prompt \
+                + "\n\n" + self.skills_prompt
         system_message = LLMMessage(role="system", content= prompt)
         return [system_message]
 

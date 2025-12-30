@@ -1,16 +1,14 @@
 import re
 import asyncio
-import fnmatch
-from typing import Callable, Iterable, Optional, AsyncGenerator
+from typing import AsyncGenerator
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
-from pywen.config.config import MCPConfig
 from pywen.config.manager import ConfigManager
 from pywen.llm.llm_client import LLMClient 
 from pywen.utils.trajectory_recorder import TrajectoryRecorder
 from pywen.llm.llm_basics import LLMMessage
 from pywen.tools.tool_manager import ToolManager
-from pywen.tools.mcp_tool import MCPServerManager, sync_mcp_servers
+from pywen.tools.mcp_tool import sync_mcp_servers
 from pywen.agents.agent_events import AgentEvent 
 from pywen.memory.memory_monitor import MemoryMonitor
 from pywen.cli.cli_console import CLIConsole
@@ -27,6 +25,7 @@ class BaseAgent(ABC):
         self.cli = cli
         self.tool_mgr = tool_mgr
         self.llm_client = LLMClient(self.config_mgr.get_active_agent())
+        self.skills_prompt = self.config_mgr.get_skills_prompt()
 
     async def setup_tools_mcp(self):
         """Setup tools based on agent configuration."""
@@ -35,7 +34,7 @@ class BaseAgent(ABC):
     def get_tool_configs(self) -> Dict[str, Dict[str, Any]]:
         """Return tool-specific configurations. Override if needed."""
         return {}
-    
+
     @abstractmethod
     def run(self, user_message: str) -> AsyncGenerator[AgentEvent, None]:
         """Run the agent - must be implemented by subclasses."""

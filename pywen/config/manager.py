@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 from .config import AppConfig, AgentConfig, ModelConfig
+from pywen.skills import SkillsManager, render_skills_section
 
 PLACEHOLDERS = {
     "your-qwen-api-key-here",
@@ -175,6 +176,57 @@ class ConfigManager:
         app_cfg = AppConfig.model_validate(raw)
         self._app_config = app_cfg
         return app_cfg
+
+    def get_md_prompt(self, args: Any | None = None) -> str:
+        """ 获取项目MD专用配置 """
+        app_cfg = self.get_app_config(args)
+        runtime = app_cfg.runtime
+        filename = "PYWEN.md"
+        parts: list[str] = []
+        current_dir = Path.cwd().resolve()
+        max_hops = 512
+        hops = 0
+        while True:
+            md_path = current_dir / filename
+            if md_path.is_file():
+                try:
+                    content = md_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    content = md_path.read_text(encoding="utf-8", errors="replace")
+                parts.append(f"Contents of {md_path}:\n\n{content}")
+
+            parent = current_dir.parent
+            if parent == current_dir:
+                break
+            current_dir = parent
+            hops += 1
+            if hops >= max_hops:
+                break
+        if not parts:
+            return ""
+
+        parts.reverse()
+        STYLE_PROMPT = (
+            "The codebase follows strict style guidelines shown below. "
+            "All code changes must strictly adhere to these guidelines to maintain "
+            "consistency and quality."
+        )
+        md_prompt = f"{STYLE_PROMPT}\n\n" + "\n\n".join(parts)
+        runtime["md_prompt"] = md_prompt
+
+        return md_prompt
+
+    def get_skills_prompt(self, args: Any | None = None) -> str:
+        """ 获取项目Skills专用配置 """
+        skill_mgr = SkillsManager(self.get_pywen_config_dir())
+        outcome = skill_mgr.skills_for_cwd()
+        skills_section: Optional[str] = None
+        if not outcome.errors and outcome.skills:
+            skills_section = render_skills_section(outcome.skills)
+        app_cfg = self.get_app_config(args)
+        app_cfg.runtime["skills_prompt"] = skills_section
+
+        return skills_section or ""
 
     def _resolve_config_path(self) -> Path:
         """
