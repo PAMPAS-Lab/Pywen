@@ -1,7 +1,6 @@
 import os
 import datetime
 import json
-from pathlib import Path
 from typing import Dict, List, Optional, AsyncGenerator, Any
 from pywen.agents.base_agent import BaseAgent
 from pywen.llm.llm_basics import LLMResponse, LLMMessage, ToolCall, ToolCallResult
