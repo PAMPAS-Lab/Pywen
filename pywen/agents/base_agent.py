@@ -26,6 +26,7 @@ class BaseAgent(ABC):
         self.tool_mgr = tool_mgr
         self.llm_client = LLMClient(self.config_mgr.get_active_agent())
         self.skills_prompt = self.config_mgr.get_skills_prompt()
+        self.project_prompt = self.config_mgr.get_project_prompt()
 
     async def setup_tools_mcp(self):
         """Setup tools based on agent configuration."""

@@ -177,8 +177,8 @@ class ConfigManager:
         self._app_config = app_cfg
         return app_cfg
 
-    def get_md_prompt(self, args: Any | None = None) -> str:
-        """ 获取项目MD专用配置 """
+    def get_project_prompt(self, args: Any | None = None) -> str:
+        """ 获取项目专用配置 """
         app_cfg = self.get_app_config(args)
         runtime = app_cfg.runtime
         filename = "PYWEN.md"
@@ -206,13 +206,13 @@ class ConfigManager:
             return ""
 
         parts.reverse()
-        STYLE_PROMPT = (
+        PROJECT_PROMPT = (
             "The codebase follows strict style guidelines shown below. "
             "All code changes must strictly adhere to these guidelines to maintain "
             "consistency and quality."
         )
-        md_prompt = f"{STYLE_PROMPT}\n\n" + "\n\n".join(parts)
-        runtime["md_prompt"] = md_prompt
+        md_prompt = f"{PROJECT_PROMPT}\n\n" + "\n\n".join(parts)
+        runtime["project_prompt"] = md_prompt
 
         return md_prompt
 

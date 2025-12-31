@@ -316,11 +316,3 @@ RUNTIME_ENV_LINUX_PROMPT = """# Runtime Environment (IMPORTANT)
 - Use bash commands with typical GNU userland.
 - Standard Linux filesystem layout is assumed unless otherwise stated.
 """
-
-STYLE_PROMPT = (
-    "The codebase follows strict style guidelines shown below. "
-    "All code changes must strictly adhere to these guidelines to maintain "
-    "consistency and quality."
-)
-
-

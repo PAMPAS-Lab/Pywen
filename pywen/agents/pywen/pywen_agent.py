@@ -11,12 +11,9 @@ from pywen.config.token_limits import TokenLimits
 from pywen.utils.session_stats import session_stats
 from pywen.llm.llm_basics import LLMResponse, ToolCall
 from .prompts import (
-    SYSTEM_PROMPT,
-    TOOL_PROMPT_SUFFIX,
     RUNTIME_ENV_LINUX_PROMPT,
     RUNTIME_ENV_MACOS_PROMPT,
     RUNTIME_ENV_WINDOWS_PROMPT,
-    STYLE_PROMPT,
     BASE_PROMPT_DEFAULT,
     SANDBOX_MACOS_SEATBELT_PROMPT,
     SANBOX_DEFAULT,
@@ -53,6 +50,16 @@ class PywenAgent(BaseAgent):
         )
         yield AgentEvent.user_message(user_message, self.current_turn_index)
 
+        cwd_prompt = (
+            f"Please note that the user launched Pywen under the path {Path.cwd()}.\n"
+            "All subsequent file-creation, file-writing, file-reading, and similar "
+            "operations should be performed within this directory."
+        )
+        env_prompt = self._build_env_prompt()
+        project_prompt = self.config_mgr.get_project_prompt()
+        self.conversation_history.append(LLMMessage(role="user", content=project_prompt))
+        self.conversation_history.append(LLMMessage(role="user", content= env_prompt + cwd_prompt))
+        self.conversation_history.append(LLMMessage(role="user", content= self.skills_prompt))
         self.conversation_history.append(LLMMessage(role="user", content=user_message))
 
         while self.current_turn_index < self.max_turns:
@@ -179,7 +186,7 @@ class PywenAgent(BaseAgent):
                 self.conversation_history.append(tool_msg)
                 yield AgentEvent.tool_result(call_id, name, error_msg, False, arguments)
 
-    def _build_runtime_env_prompt(self) -> str:
+    def _build_env_prompt(self) -> str:
         sys_name = platform.system()
         release = platform.release()
         python = platform.python_version()
@@ -208,64 +215,10 @@ class PywenAgent(BaseAgent):
             python=python,
         )
 
-    def _build_pywen_md_prompt(self) -> str:
-        filename = "PYWEN.md"
-        parts: list[str] = []
-        current_dir = Path.cwd().resolve()
-        max_hops = 512
-        hops = 0
-        while True:
-            md_path = current_dir / filename
-            if md_path.is_file():
-                try:
-                    content = md_path.read_text(encoding="utf-8")
-                except UnicodeDecodeError:
-                    content = md_path.read_text(encoding="utf-8", errors="replace")
-                parts.append(f"Contents of {md_path}:\n\n{content}")
-
-            parent = current_dir.parent
-            if parent == current_dir:
-                break
-            current_dir = parent
-            hops += 1
-            if hops >= max_hops:
-                break
-        if not parts:
-            return ""
-        parts.reverse()
-
-        return f"{STYLE_PROMPT}\n\n" + "\n\n".join(parts)
-
     def _update_system_prompt(self, system_prompt: str) -> List[LLMMessage]:
-        cwd_prompt = (
-            f"Please note that the user launched Pywen under the path {Path.cwd()}.\n"
-            "All subsequent file-creation, file-writing, file-reading, and similar "
-            "operations should be performed within this directory."
-        )
-        env_prompt = self._build_runtime_env_prompt()
-        style_prompt = self._build_pywen_md_prompt()
-        prompt = system_prompt.rstrip() \
-                + "\n\n" + style_prompt \
-                + "\n\n" + env_prompt \
-                + "\n\n" + self.skills_prompt \
-                + "\n\n" + cwd_prompt
+        prompt = system_prompt.rstrip()
         system_message = LLMMessage(role="system", content= prompt)
         return [system_message]
-
-    def _build_system_prompt(self) -> str:
-        """Build system prompt with tool descriptions."""
-        available_tools = self.tool_mgr.list_for_provider("pywen")
-        system_prompt = SYSTEM_PROMPT 
-        for tool in available_tools:
-            system_prompt += f"- **{tool.name}**: {tool.description}\n"
-            params = tool.parameter_schema.get('properties', {})
-            if not params:
-                continue
-            param_list = ", ".join(params.keys())
-            system_prompt += f"  Parameters: {param_list}\n"
-        
-        system_prompt += TOOL_PROMPT_SUFFIX 
-        return system_prompt.strip()
 
     def get_core_system_prompt(self,user_memory: str = "") -> str:
         PYWEN_CONFIG_DIR = Path.home() / ".pywen"
