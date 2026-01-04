@@ -132,8 +132,12 @@ class ClaudeAgent(BaseAgent):
         workflow_content = self.prompts.get_system_workflow()
         env_info = self.prompts.get_env_info(self.project_path)
         workflow_with_env = f"{workflow_content}\n\n{env_info}"
+        project_prompt = self.config_mgr.get_project_prompt()
+        skills_prompt = self.config_mgr.get_skills_prompt()
+        messages.append(LLMMessage(role="system", content=project_prompt))
+        messages.append(LLMMessage(role="system", content=skills_prompt))
         messages.append(LLMMessage(role="system", content=workflow_with_env))
-        messages.append(LLMMessage(role="user", content=get_system_reminder_start() ))
+        messages.append(LLMMessage(role="user", content=get_system_reminder_start()))
         for msg in self.conversation_history[:-1]:
             messages.append(msg)
 

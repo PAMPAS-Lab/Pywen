@@ -142,9 +142,13 @@ class CodexAgent(BaseAgent):
         self.trajectory_recorder.start_recording(
             task=user_message, provider=provider, model=model_name, max_steps=self.turn_cnt_max
         )
-        self.history.add_message(role="user", content=user_message)
         env_msg = self.build_environment_context(cwd=os.getcwd(),shell=os.environ.get("SHELL", "bash"))
+        project_msg = self.config_mgr.get_project_prompt()
+        skills_msg = self.config_mgr.get_skills_prompt()
+        self.history.add_message(role="user", content=project_msg)
         self.history.add_message(role="user", content=env_msg)
+        self.history.add_message(role="user", content=skills_msg)
+        self.history.add_message(role="user", content=user_message)
 
         while self.turn_index < self.turn_cnt_max:
             messages:List[HistoryItem] = self.history.to_responses_input()
