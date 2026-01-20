@@ -61,7 +61,7 @@ class HelpCommand(BaseCommand):
         """
         从 CommandRegistry 动态生成命令列表。
         """
-        reg = context.get("command_registry")
+        reg = context.get("cmd_mgr")
         lines: List[str] = []
 
         if not reg:

@@ -5,6 +5,7 @@ from rich import get_console
 import sys
 import platform
 from .base_command import BaseCommand, CommandResult, CommandAction
+from pywen import get_version
 
 class AboutCommand(BaseCommand):
     def __init__(self):
@@ -28,7 +29,7 @@ class AboutCommand(BaseCommand):
     def _build_version_info(self) -> str:
         """构建版本信息"""
         content = []
-        content.append(f"[bold cyan]Pywen CLI Version:[/bold cyan] 1.0.0")
+        content.append(f"[bold cyan]Pywen CLI Version:[/bold cyan] {get_version()}")
         content.append(f"[bold cyan]Python Version:[/bold cyan] {sys.version}")
         content.append(f"[bold cyan]Platform:[/bold cyan] {platform.platform()}")
         content.append(f"[bold cyan]Architecture:[/bold cyan] {platform.machine()}")
