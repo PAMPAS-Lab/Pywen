@@ -70,8 +70,8 @@ class HelpCommand(BaseCommand):
             lines.append("[purple]![/purple]             shell command")
             return lines
 
-        # reg.all() -> Dict[str, BaseCommand]
-        all_cmds = reg.all()
+        # reg.list_commands() -> Dict[str, BaseCommand]
+        all_cmds = reg.list_commands()
 
         # 去重：同一个 BaseCommand 可能以 name 和 alt_name 两个 key 出现
         unique: Dict[int, Tuple[str, Any]] = {}

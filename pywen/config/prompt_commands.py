@@ -3,7 +3,7 @@ import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple 
 
 @dataclass(frozen=True)
 class PromptSpec:
@@ -21,6 +21,18 @@ class PromptSpec:
     template: str
     source_path: Path
 
+class PromptArgsError(Exception):
+    def __init__(self, command: str, message: str) -> None:
+        super().__init__(message)
+        self.command = command
+        self.message = message
+
+class PromptExpansionError(Exception):
+    def __init__(self, command: str, message: str) -> None:
+        super().__init__(message)
+        self.command = command
+        self.message = message
+
 def _split_front_matter(text: str) -> Tuple[Dict[str, str], str]:
     """
     极简 front matter 解析：
@@ -37,7 +49,7 @@ def _split_front_matter(text: str) -> Tuple[Dict[str, str], str]:
         return {}, text
 
     header_lines = lines[1:end]
-    body = "\n".join(lines[end + 1 :])
+    body = "\n".join(lines[end + 1:])
 
     meta: Dict[str, str] = {}
     for ln in header_lines:
@@ -68,12 +80,17 @@ def _load_prompt_specs_from_dir(prompts_dir: Path) -> List[PromptSpec]:
     for p in sorted(prompts_dir.iterdir()):
         if not p.is_file() or p.suffix.lower() != ".md":
             continue
-        text = p.read_text(encoding="utf-8")
+        try:
+            text = p.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+
         meta, body = _split_front_matter(text)
 
         name = p.stem
         desc = meta.get("description", f"Custom prompt: {name}")
         hint = meta.get("argument-hint", meta.get("argument_hint", ""))
+
         specs.append(PromptSpec(
                 name=name,
                 description=desc,
@@ -84,11 +101,13 @@ def _load_prompt_specs_from_dir(prompts_dir: Path) -> List[PromptSpec]:
         )
     return specs
 
-def load_prompt_specs(prompt_dirs: List[Path] | None = None, *, cwd: Path | None = None,) -> List[PromptSpec]:
+
+def load_prompt_specs(prompt_dirs: List[Path] | None = None, *,
+    cwd: Path | None = None,) -> List[PromptSpec]:
     """
     按优先级合并多个目录的 prompt：
     - 默认顺序：./.pywen/prompts -> ~/.pywen/prompts
-    - 同名（stem 相同）时：先扫描到的优先（即本地覆盖全局）
+    - 同名（stem 相同）时：先扫描到的优先
     """
     dirs = prompt_dirs or get_default_prompt_dirs(cwd=cwd)
 
@@ -101,16 +120,18 @@ def load_prompt_specs(prompt_dirs: List[Path] | None = None, *, cwd: Path | None
 
     return [merged[k] for k in sorted(merged.keys())]
 
+# 1) 用于模板替换的 token 匹配
 _VAR_RE = re.compile(r"\$[A-Z][A-Z0-9_]*|\$ARGUMENTS|\$[1-9]|\$\$")
+
+# 2) 用于 required-named-args 检测
+#    注意：只把 $[A-Z][A-Z0-9_]* 视为“命名参数占位符”，并排除 ARGUMENTS
+_PROMPT_NAMED_VAR_RE = re.compile(r"\$[A-Z][A-Z0-9_]*")
 
 def parse_prompt_args(args: str) -> Tuple[List[str], Dict[str, str]]:
     """
     解析 args，支持：
     - 位置参数：/review a b c   -> $1=a, $2=b, $ARGUMENTS="a b c"
-    - 命名参数：/review FILE=xx FOCUS="hello world" -> $FILE, $FOCUS
-    规则：
-    - KEY 必须是大写字母/数字/下划线（首字符字母）
-    - 使用 shlex 支持引号与转义
+    - 命名参数：/review file=xx Focus="hello world" -> $FILE, $FOCUS
     """
     tokens = shlex.split(args) if args.strip() else []
     positional: List[str] = []
@@ -120,11 +141,59 @@ def parse_prompt_args(args: str) -> Tuple[List[str], Dict[str, str]]:
         if "=" in t:
             k, v = t.split("=", 1)
             if _is_valid_named_key(k):
-                named[k] = v
+                named[k.upper()] = v
                 continue
         positional.append(t)
 
     return positional, named
+
+
+def required_named_args(template: str) -> List[str]:
+    """
+    从模板中提取“required named args”，迁移旧实现 prompt_argument_names 的思路：
+    - 匹配 $FOO（FOO 为大写字母开头 + 大写/数字/下划线）
+    - 排除 $ARGUMENTS
+    - 跳过转义形式 $$FOO（前一个字符也是 $）
+    - 去重并保持出现顺序
+    """
+    seen = set()
+    out: List[str] = []
+
+    for m in _PROMPT_NAMED_VAR_RE.finditer(template):
+        start = m.start()
+        if start > 0 and template[start - 1] == "$":
+            continue
+
+        var = m.group(0)[1:]
+        if var == "ARGUMENTS":
+            continue
+
+        if var not in seen:
+            seen.add(var)
+            out.append(var)
+
+    return out
+
+def validate_required_named_args(*,template: str,named: Dict[str, str],command: str,) -> None:
+    """
+    若模板需要的 named args 未提供，则抛 PromptExpansionError。
+    """
+    required = required_named_args(template)
+    if not required:
+        return
+
+    missing = [k for k in required if k not in named]
+    if not missing:
+        return
+
+    list_text = ", ".join(missing)
+    raise PromptExpansionError(
+        command=command,
+        message=(
+            f"Missing required args for {command}: {list_text}. "
+            "Provide as key=value (quote values with spaces)."
+        ),
+    )
 
 def expand_prompt_template(template: str, positional: List[str], named: Dict[str, str]) -> str:
     """
@@ -132,29 +201,39 @@ def expand_prompt_template(template: str, positional: List[str], named: Dict[str
     - $$ -> 字面量 $
     - $ARGUMENTS -> 所有位置参数拼接
     - $1..$9 -> 对应位置参数
-    - $FOO -> named["FOO"]（未提供则为空串）
+    - $FOO -> named["FOO"]）
     """
     def repl(m: re.Match) -> str:
         tok = m.group(0)
+
         if tok == "$$":
             return "$"
+
         if tok == "$ARGUMENTS":
             return " ".join(positional)
+
         # $1..$9
         if len(tok) == 2 and tok[0] == "$" and tok[1].isdigit():
             idx = int(tok[1]) - 1
             return positional[idx] if 0 <= idx < len(positional) else ""
-        # $FOO
+
+        # $FOO (FOO is uppercase)
         if tok.startswith("$") and tok[1:].isupper():
             return named.get(tok[1:], "")
         return tok
 
     return _VAR_RE.sub(repl, template)
 
+
 def _is_valid_named_key(k: str) -> bool:
-    if not k or not k[0].isalpha() or not k[0].isupper():
+    """
+    允许：
+    - 首字符：字母（a-zA-Z）
+    - 后续：字母/数字/下划线
+    """
+    if not k or not k[0].isalpha():
         return False
     for ch in k:
-        if not (ch.isupper() or ch.isdigit() or ch == "_"):
+        if not (ch.isalpha() or ch.isdigit() or ch == "_"):
             return False
     return True

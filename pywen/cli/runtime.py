@@ -68,8 +68,8 @@ class CommandRouter:
         return await self._impl.process_command(raw, context)
 
     @property
-    def registry(self):
-        return self._impl.registry
+    def cmd_mgr(self):
+        return self._impl
 
 class CancellationToken:
     def __init__(self) -> None:
@@ -256,7 +256,7 @@ class InteractiveSession:
                 "config_mgr": self.config_mgr,
                 "hook_mgr": self.hook_mgr,
                 "tool_mgr": self.tool_mgr,
-                "cmd_mgr": self._router.registry,
+                "cmd_mgr": self._router.cmd_mgr,
             }
             cmd_res = await self._router.try_handle(line, context=ctx)
             if cmd_res.action == CommandAction.EXIT:

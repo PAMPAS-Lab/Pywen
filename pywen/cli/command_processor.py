@@ -2,13 +2,9 @@
 from __future__ import annotations
 import os
 import subprocess
-from typing import Dict
-import subprocess
-import os
-from typing import Dict
-from .command_registry import CommandRegistry
+from typing import Dict 
 from .commands.custom_prompts import CustomCommand
-from .commands.base_command import CommandResult, CommandAction
+from .commands.base_command import BaseCommand,CommandResult,CommandAction
 from .commands.help_command import HelpCommand
 from .commands.about_command import AboutCommand
 from .commands.clear_command import ClearCommand
@@ -28,8 +24,11 @@ from pywen.config.prompt_commands import load_prompt_specs
 
 class CommandProcessor:
     def __init__(self):
-        self.registry = CommandRegistry()
+        self._commands: Dict[str, BaseCommand] = {}
         self._register_commands()
+
+    def list_commands(self)-> Dict[str, BaseCommand]:
+        return dict(self._commands)
 
     def _register_commands(self) -> None:
         # 1) 静态命令
@@ -54,11 +53,13 @@ class CommandProcessor:
             ChatCommand(),
             CompressCommand(),
          ]
-        self.registry.bulk_register(static_cmds)
+        for cmd in static_cmds:
+            self._commands[cmd.name] = cmd
 
         # 2) 动态 prompt 命令
         for spec in load_prompt_specs():
-            self.registry.register(CustomCommand(spec))
+            cmd = CustomCommand(spec)
+            self._commands[cmd.name] = cmd
 
     async def process_command(self, user_input: str, context: Dict) -> CommandResult:
         # 感叹号 shell
@@ -75,7 +76,7 @@ class CommandProcessor:
         command_name = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
 
-        cmd = self.registry.get(command_name)
+        cmd = self._commands.get(command_name)
         if not cmd:
             console = context.get("console")
             if console:
