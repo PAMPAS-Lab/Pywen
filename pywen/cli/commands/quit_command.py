@@ -4,7 +4,7 @@ from typing import Dict, Any
 from rich.panel import Panel
 from rich import get_console
 from rich.align import Align
-from .base_command import BaseCommand
+from .base_command import BaseCommand, CommandResult, CommandAction
 from pywen.utils.session_stats import session_stats
 
 

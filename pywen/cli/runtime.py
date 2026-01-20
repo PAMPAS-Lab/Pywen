@@ -9,13 +9,14 @@ from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from pywen.agents.agent_events import Agent_Events
 from pywen.agents.agent_manager import AgentManager
 from pywen.cli.command_processor import CommandProcessor
+from pywen.cli.cli_console import CLIConsole
+from pywen.cli.commands.base_command import CommandAction, CommandResult
 from pywen.config.manager import ConfigManager
 from pywen.utils.key_binding import create_key_bindings
 from pywen.llm.llm_basics import LLMMessage
 from pywen.tools.tool_manager import ToolManager
 from pywen.hooks.models import HookEvent
 from pywen.utils.permission_manager import PermissionLevel, PermissionManager
-from pywen.cli.cli_console import CLIConsole
 from pywen.memory.memory_monitor import MemoryMonitor
 
 class RunEndType(str, Enum):
@@ -63,8 +64,12 @@ class CommandRouter:
     def __init__(self) -> None:
         self._impl = CommandProcessor()
 
-    async def try_handle(self, raw: str, *, context: dict) -> dict:
+    async def try_handle(self, raw: str, *, context: dict) -> CommandResult:
         return await self._impl.process_command(raw, context)
+
+    @property
+    def registry(self):
+        return self._impl.registry
 
 class CancellationToken:
     def __init__(self) -> None:
@@ -251,18 +256,23 @@ class InteractiveSession:
                 "config_mgr": self.config_mgr,
                 "hook_mgr": self.hook_mgr,
                 "tool_mgr": self.tool_mgr,
+                "cmd_mgr": self._router.registry,
             }
-            res = await self._router.try_handle(line, context=ctx)
-            if res.get("result") and res.get("message") == "EXIT":
+            cmd_res = await self._router.try_handle(line, context=ctx)
+            if cmd_res.action == CommandAction.EXIT:
                 break
-            elif res.get("result") == False and res.get("message") == "continue":
-                pass
+            if cmd_res.action == CommandAction.HANDLED:
+                continue
+            if cmd_res.action == CommandAction.REWRITE:
+                effective_input = cmd_res.text or ""
             else:
-                continue  # 命令已处理，继续下一轮输入
-
+                effective_input = line  # FORWARD
+            if not effective_input.strip():
+                continue
+            
             self.cancel_event.clear()
             outcome = await self._runner.run_once(
-                user_input=line, session_id=sid, cancel_token=self.cancel_event
+                user_input=effective_input, session_id=sid, cancel_token=self.cancel_event
             )
 
             if outcome.end in (RunEndType.COMPLETED, RunEndType.TASK_COMPLETE, RunEndType.TURN_MAX_REACHED):

@@ -1,15 +1,15 @@
 """Agent切换命令实现"""
-from .base_command import BaseCommand
+from typing import Dict, Any
 from pywen.cli.cli_console import CLIConsole 
 from pywen.agents.agent_manager import AgentManager
 from pywen.config.manager import ConfigManager
-from typing import Dict, Any
+from .base_command import BaseCommand, CommandResult, CommandAction
 
 class AgentCommand(BaseCommand):
     def __init__(self):
         super().__init__("agent", "switch between different agents")
     
-    async def execute(self, context: Dict[str, Any], args: str) -> dict:
+    async def execute(self, context: Dict[str, Any], args: str) -> CommandResult:
         """处理agent切换命令"""
         parts = args.strip().split() if args.strip() else []
         agent_manager : AgentManager = context['agent_mgr']
@@ -27,9 +27,9 @@ class AgentCommand(BaseCommand):
             # 切换agent
             if parts[0] not in agents:
                 cli.print(f"agent '{parts[0]}' not found.")
-                return {"result": False, "message": f"agent '{parts[0]}' not found."}
+                return  CommandResult(action=CommandAction.HANDLED, error=f"agent '{parts[0]}' not found.") 
             config_mgr.switch_active_agent(parts[0], None)
             await agent_manager.switch_to(parts[0])
             cli.print(f"switched to agent '{parts[0]}'.")
         
-        return {"result": True, "message": "success"} 
+        return  CommandResult(action=CommandAction.HANDLED) 

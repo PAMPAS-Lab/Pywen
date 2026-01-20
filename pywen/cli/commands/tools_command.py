@@ -1,24 +1,22 @@
 """Tools command implementation"""
-
 from typing import Dict, Any
 from rich import get_console
 from rich.table import Table
-from .base_command import BaseCommand
+from .base_command import BaseCommand, CommandResult, CommandAction
 from pywen.tools.tool_manager import ToolManager
-
 
 class ToolsCommand(BaseCommand):
     def __init__(self):
         super().__init__("tools", "list available Pywen tools")
         self.console = get_console()
     
-    async def execute(self, context: Dict[str, Any], args: str) -> dict:
+    async def execute(self, context: Dict[str, Any], args: str) -> CommandResult:
         """显示可用工具列表"""
         agent_mgr  = context.get('agent_mgr')
         
         if not agent_mgr:
             self.console.print("[red]No agent manager available[/red]")
-            return {"result": False, "message": "no agent manager available"}
+            return CommandResult(action=CommandAction.HANDLED, error="no agent manager available")
         
         try:
             provider = agent_mgr.current_name.lower().replace("agent", "")
@@ -44,5 +42,5 @@ class ToolsCommand(BaseCommand):
             import traceback
             self.console.print(f"[dim]{traceback.format_exc()}[/dim]")
         
-        return {"result": True, "message": "success"}
+        return CommandResult(action=CommandAction.HANDLED)
 

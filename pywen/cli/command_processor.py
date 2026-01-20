@@ -1,9 +1,14 @@
 """command processor"""
-
+from __future__ import annotations
+import os
+import subprocess
+from typing import Dict
 import subprocess
 import os
 from typing import Dict
-from.commands.base_command import BaseCommand
+from .command_registry import CommandRegistry
+from .commands.custom_prompts import CustomCommand
+from .commands.base_command import CommandResult, CommandAction
 from .commands.help_command import HelpCommand
 from .commands.about_command import AboutCommand
 from .commands.clear_command import ClearCommand
@@ -19,16 +24,16 @@ from .commands.placeholder_commands import (
     EditorCommand, McpCommand, ExtensionsCommand,
     ChatCommand, CompressCommand
 )
+from pywen.config.prompt_commands import load_prompt_specs
 
 class CommandProcessor:
     def __init__(self):
-        self.commands: Dict[str, BaseCommand] = {}
+        self.registry = CommandRegistry()
         self._register_commands()
-    
-    def _register_commands(self):
-        """注册所有命令"""
-        # 已实现的命令
-        commands = [
+
+    def _register_commands(self) -> None:
+        # 1) 静态命令
+        static_cmds = [
             HelpCommand(),
             AboutCommand(),
             ClearCommand(),
@@ -48,42 +53,38 @@ class CommandProcessor:
             ExtensionsCommand(),
             ChatCommand(),
             CompressCommand(),
-        ]
-        
-        for cmd in commands:
-            self.commands[cmd.name] = cmd
-            if cmd.alt_name:
-                self.commands[cmd.alt_name] = cmd
-    
-    async def process_command(self, user_input: str, context: Dict) -> dict:
-        """处理命令输入"""
-        # 感叹号命令, 执行shell命令
-        if user_input.startswith('!'):
-            return await self._handle_shell_command(user_input, context)
-        
-        # 非斜杠命令, 继续正常处理
-        if not user_input.startswith('/'):
-            return {"result": False, "message": "continue"} #
-        
-        # 解析命令
-        parts = user_input[1:].split(' ', 1)
+         ]
+        self.registry.bulk_register(static_cmds)
+
+        # 2) 动态 prompt 命令
+        for spec in load_prompt_specs():
+            self.registry.register(CustomCommand(spec))
+
+    async def process_command(self, user_input: str, context: Dict) -> CommandResult:
+        # 感叹号 shell
+        if user_input.startswith("!"):
+            await self._handle_shell_command(user_input, context)
+            return CommandResult(action=CommandAction.HANDLED)
+
+        # 非 slash：交给 agent
+        if not user_input.startswith("/"):
+            return CommandResult(action=CommandAction.FORWARD)
+
+        # 解析 slash
+        parts = user_input[1:].split(" ", 1)
         command_name = parts[0].lower()
         args = parts[1] if len(parts) > 1 else ""
-        
-        # 查找并执行命令
-        if command_name in self.commands:
-            command = self.commands[command_name]
-            return await command.execute(context, args)
-        
-        # 未知命令
-        console = context.get('console')
-        if console:
-            console.print(f"Unknown command: /{command_name}", "red")
-            console.print("Type '/help' to see available commands.","dim")
-        
-        # 返回True表示已处理（即使是错误）
-        return {"result": True, "message": "success"} #
-    
+
+        cmd = self.registry.get(command_name)
+        if not cmd:
+            console = context.get("console")
+            if console:
+                console.print(f"Unknown command: /{command_name}", "red")
+                console.print("Type '/help' to see available commands.", "dim")
+            return CommandResult(action=CommandAction.HANDLED)
+
+        return await cmd.execute(context, args)
+
     async def _handle_shell_command(self, user_input: str, context: Dict) -> dict:
         """处理感叹号开头的shell命令"""
         console = context.get('console')
@@ -170,7 +171,6 @@ class CommandProcessor:
                 target_dir = os.path.expanduser(target_dir)
                 if not os.path.isabs(target_dir):
                     target_dir = os.path.join(os.getcwd(), target_dir)
-        
         try:
             # 规范化路径
             target_dir = os.path.abspath(target_dir)
