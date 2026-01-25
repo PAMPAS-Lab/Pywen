@@ -1,4 +1,4 @@
-"""Python implementation of Codex skills discovery and injection."""
+"""Python implementation of Codex skills discovery and injection. """
 
 from .models import (
     SkillScope,

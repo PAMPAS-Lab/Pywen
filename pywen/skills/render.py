@@ -34,6 +34,6 @@ def render_skills_section(skills: list[SkillMetadata]) -> str | None:
   - Avoid deeply nested references; prefer one-hop files explicitly linked from `SKILL.md`.
   - When variants exist (frameworks, providers, domains), pick only the relevant reference file(s) and note that choice.
 - Safety and fallback: If a skill can't be applied cleanly (missing files, unclear instructions), state the issue, pick the next-best approach, and continue."""
-    )
+)
 
     return "\n".join(lines)

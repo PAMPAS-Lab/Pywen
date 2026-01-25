@@ -1,9 +1,9 @@
 """System skills caching and installation."""
 from __future__ import annotations
-from pathlib import Path
-import hashlib
 import os
 import shutil
+import hashlib
+from pathlib import Path
 
 SYSTEM_SKILLS_DIR_NAME = ".system"
 SKILLS_DIR_NAME = "skills"
@@ -44,7 +44,7 @@ def install_system_skills(pywen_home: Path, embedded_skills_dir: Path | None = N
 
 def embedded_system_skills_fingerprint(embedded_dir: Path) -> str:
     items: list[tuple[str, str | None]] = []
-    for root, dirs, files in os.walk(embedded_dir):
+    for root, _, files in os.walk(embedded_dir):
         rel_root = os.path.relpath(root, embedded_dir)
         items.append((rel_root, None))
         for filename in files:

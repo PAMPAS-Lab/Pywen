@@ -1,9 +1,9 @@
 from __future__ import annotations
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Iterable, Optional
 import os
 import yaml
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Iterable, Optional
 from .models import SkillError, SkillLoadOutcome, SkillMetadata, SkillRoot, SkillScope
 
 SKILLS_FILENAME = "SKILL.md"

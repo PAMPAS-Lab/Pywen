@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 from threading import RLock
-from .loader import load_skills_from_roots, skill_roots_for_cwd
 from .models import SkillLoadOutcome
 from .system import install_system_skills
+from .loader import load_skills_from_roots, skill_roots_for_cwd
 
 class SkillsManager:
     def __init__(self, pywen_home: Path, embedded_system_skills_dir: Path | None = None) -> None:

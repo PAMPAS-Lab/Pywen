@@ -2,10 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 from .models import SkillInjections, SkillLoadOutcome, SkillMetadata, SkillInstructions, UserInput
 
-def build_skill_injections(
-    inputs: list[UserInput],
-    skills: SkillLoadOutcome | None,
-) -> SkillInjections:
+def build_skill_injections(inputs: list[UserInput], skills: SkillLoadOutcome | None,) -> SkillInjections:
     if not inputs or skills is None:
         return SkillInjections()
 
@@ -31,10 +28,7 @@ def build_skill_injections(
 
     return result
 
-def collect_explicit_skill_mentions(
-    inputs: list[UserInput],
-    skills: list[SkillMetadata],
-) -> list[SkillMetadata]:
+def collect_explicit_skill_mentions(inputs: list[UserInput], skills: list[SkillMetadata],) -> list[SkillMetadata]:
     selected: list[SkillMetadata] = []
     seen: set[str] = set()
 
