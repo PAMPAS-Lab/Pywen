@@ -1,19 +1,18 @@
 """内存管理命令实现"""
-
 from rich.panel import Panel
 from rich import get_console
-from .base_command import BaseCommand
+from .base_command import BaseCommand, CommandResult, CommandAction
 
 class MemoryCommand(BaseCommand):
     def __init__(self):
         super().__init__("memory", "Commands for interacting with memory.")
         self.console = get_console()
     
-    async def execute(self, context, args: str) -> dict:
+    async def execute(self, context, args: str) -> CommandResult:
         """处理内存相关命令"""
         if not args:
             self._show_memory_help()
-            return {"result": False, "message": "no arguments provided"}
+            return CommandResult(action=CommandAction.HANDLED, error="no arguments provided")
 
         subcommand = args.split()[0].lower()
         
@@ -26,7 +25,7 @@ class MemoryCommand(BaseCommand):
         else:
             self._show_memory_help()
         
-        return {"result": True, "message": "success"}
+        return CommandResult(action=CommandAction.HANDLED)
     
     def _show_memory_help(self):
         """显示内存命令帮助"""

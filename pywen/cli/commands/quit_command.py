@@ -4,7 +4,7 @@ from typing import Dict, Any
 from rich.panel import Panel
 from rich import get_console
 from rich.align import Align
-from .base_command import BaseCommand
+from .base_command import BaseCommand, CommandResult, CommandAction
 from pywen.utils.session_stats import session_stats
 
 
@@ -19,7 +19,7 @@ class QuitCommand(BaseCommand):
         )
         self.console = get_console()
     
-    async def execute(self, context: Dict[str, Any], args: str) -> dict:
+    async def execute(self, context: Dict[str, Any], args: str) -> CommandResult:
         """Execute the quit command."""
         # Create a beautiful goodbye panel
         goodbye_content = """
@@ -69,7 +69,7 @@ class QuitCommand(BaseCommand):
         self.console.print(stats_panel)
         self.console.print(goodbye_panel)
 
-        return {"result": True, "message": "EXIT"}
+        return CommandResult(action=CommandAction.EXIT)
 
     def get_help(self) -> str:
         """Get help text for the quit command."""

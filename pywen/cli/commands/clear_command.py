@@ -2,20 +2,20 @@
 import os
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-from .base_command import BaseCommand
+from .base_command import BaseCommand, CommandResult, CommandAction
 
 class ClearCommand(BaseCommand):
     def __init__(self):
         super().__init__("clear", "clear the screen and conversation history")
     
-    async def execute(self, context, args: str) -> dict:
+    async def execute(self, context, args: str) ->  CommandResult:
         """清屏并重置对话历史"""
         console = context.get('console')
         
         # 检查是否有 --force 或 -f 参数跳过确认
         if args and ('-f' in args or '--force' in args):
             await self._perform_clear(context)
-            return {"result": True, "message": "success"} 
+            return  CommandResult(action=CommandAction.HANDLED, text="Screen cleared and conversation history reset.") 
         
         # 询问用户确认
         if console:
@@ -39,7 +39,7 @@ class ClearCommand(BaseCommand):
                 console.print(f"[dim]Clear operation cancelled: {e}[/dim]")
                 console.print("")
         
-        return {"result": True, "message": "success"} 
+        return  CommandResult(action=CommandAction.HANDLED) 
     
     async def _perform_clear(self, context):
         """执行清屏操作"""

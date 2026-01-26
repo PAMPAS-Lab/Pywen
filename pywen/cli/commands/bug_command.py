@@ -1,24 +1,23 @@
 """GitHub issue 报告命令实现"""
-
 import aiohttp
 import os
 import sys
 import platform
 from typing import Dict, Any
 from rich import get_console
-from .base_command import BaseCommand
+from .base_command import BaseCommand, CommandResult, CommandAction
 
 class BugCommand(BaseCommand):
     def __init__(self):
         super().__init__("bug", "create a GitHub issue for bug reports")
         self.console = get_console()
     
-    async def execute(self, context: Dict[str, Any], args: str) -> dict:
+    async def execute(self, context: Dict[str, Any], args: str) ->  CommandResult:
         """创建 GitHub issue"""
         if not args.strip():
             self.console.print("[red]Usage: /bug <bug_description>[/red]")
             self.console.print("[dim]Example: /bug Found a memory leak in agent execution[/dim]")
-            return {"result": True, "message": "success"} 
+            return  CommandResult(action=CommandAction.HANDLED, error="No bug description provided") 
         
         description = args.strip()
         
@@ -30,7 +29,7 @@ class BugCommand(BaseCommand):
             self.console.print("[dim]1. Go to https://github.com/settings/tokens/ [dim]")
             self.console.print("[dim]2. Generate new token with 'repo' permissions[/dim]")
             self.console.print("[dim]3. Set: export GITHUB_TOKEN=your_token[/dim]")
-            return {"result": True, "message": "success"} 
+            return  CommandResult(action=CommandAction.HANDLED, error="GITHUB_TOKEN not set") 
         
         # 显示创建中状态
         self.console.print("[yellow]🔄 Creating GitHub issue...[/yellow]")
@@ -42,7 +41,7 @@ class BugCommand(BaseCommand):
             self.console.print(f"[red]❌ Failed to create issue: {str(e)}[/red]")
             self.console.print("[dim]Please ensure your GitHub token has 'repo' permissions[/dim]")
         
-        return {"result": True, "message": "success"} 
+        return  CommandResult(action=CommandAction.HANDLED) 
     
     async def _create_github_issue(self, description: str, github_token: str) -> str:
         """使用 GitHub API 创建 issue"""

@@ -1,16 +1,15 @@
 """Model切换命令实现"""
-
-from rich import get_console
-from .base_command import BaseCommand
-from pywen.config.manager import ConfigManager
 from typing import Dict, Any
+from rich import get_console
+from .base_command import BaseCommand, CommandResult, CommandAction
+from pywen.config.manager import ConfigManager
 
 class ModelCommand(BaseCommand):
     def __init__(self):
         super().__init__("model", "switch between different model providers")
         self.console = get_console()
     
-    async def execute(self, context: Dict[str, Any], args: str) -> dict:
+    async def execute(self, context: Dict[str, Any], args: str) -> CommandResult:
         """处理model切换命令"""
         parts = args.strip().split() if args.strip() else []
         
@@ -24,7 +23,7 @@ class ModelCommand(BaseCommand):
             self.console.print("[red]Usage: /model [provider_name][/red]")
             self.console.print("")
         
-        return {"result": True, "message": "success"}
+        return CommandResult(action=CommandAction.HANDLED)
     
     def _show_available_models(self, context: Dict[str, Any]):
         """显示可用model列表"""

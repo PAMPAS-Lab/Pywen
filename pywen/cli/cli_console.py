@@ -1,9 +1,9 @@
 """CLI Console for displaying agent progress."""
 from __future__ import annotations
 import os
-from typing import Optional, Any, Dict
-from rich.console import Group
+from typing import Optional, Any, Dict, Union
 from rich import get_console
+from rich.console import Group,RenderableType
 from rich.panel import Panel
 from rich.text import Text
 from rich.syntax import Syntax
@@ -73,11 +73,19 @@ class Printer:
     def __init__(self, console):
         self.console = console
 
-    def print_text(self, message: str, color: str = "blue", bold: bool = False):
-        text = Text(message, style=color)
-        if bold:
-            text.stylize("bold")
-        self.console.print(text)
+    def print_text(self, message: Union[str, Text, RenderableType], color: str = "blue", bold: bool = False):
+        if isinstance(message, Text):
+            if color:
+                message.stylize(color)
+            self.console.print(message)
+            return
+        if isinstance(message, str):
+            if color:
+                self.console.print(Text(message, style=color))
+            else:
+                self.console.print(message)
+            return
+        self.console.print(message)
 
     def print_raw(self, obj):
         self.console.print(obj)

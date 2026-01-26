@@ -1,7 +1,7 @@
 """占位符命令实现 - 待完善的命令"""
 
 from rich import get_console
-from .base_command import BaseCommand
+from .base_command import BaseCommand, CommandResult, CommandAction
 
 class PlaceholderCommand(BaseCommand):
     """通用占位符命令"""
@@ -10,11 +10,11 @@ class PlaceholderCommand(BaseCommand):
         super().__init__(name, description, alt_name)
         self.console = get_console()
     
-    async def execute(self, context, args: str) -> dict:
+    async def execute(self, context, args: str) -> CommandResult:
         """显示占位符信息"""
         self.console.print(f"[yellow]Command '/{self.name}' is not yet implemented.[/yellow]")
         self.console.print(f"[dim]Description: {self.description}[/dim]")
-        return {"result": True, "message": "success"}
+        return CommandResult(action=CommandAction.HANDLED)
 
 class PrivacyCommand(PlaceholderCommand):
     def __init__(self):
