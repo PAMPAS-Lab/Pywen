@@ -464,6 +464,7 @@ echo $PYWEN_API_KEY
 
 - **Google** 的[Gemini CLI](https://github.com/google-gemini/gemini-cli)项目，为本项目提供了智能体执行逻辑和丰富的工具生态库
 - **阿里云通义千问团队** 提供强大的 [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) 模型和 [Qwen-Code](https://github.com/QwenLM/qwen-code) 参考实现
+- **OpenAI** 的 [Codex](https://github.com/openai/codex) 项目，为本项目的 Codex 风格智能体设计提供了重要参考
 - **ByteDance** 的 [trae-agent](https://github.com/bytedance/trae-agent) 项目，为本项目提供了宝贵的基础架构
 - **Yuyz0112** 的 [claude-code-reverse](https://github.com/Yuyz0112/claude-code-reverse)项目和 **shareAI-lab** 的 [Kode](https://github.com/shareAI-lab/Kode)项目，为本项目的claude code智能体开发提供思路
 

@@ -478,6 +478,7 @@ We thank:
 
 - **Google** for the [Gemini CLI](https://github.com/google-gemini/gemini-cli) project, which provided agent execution logic and rich tool ecosystem libraries for this project
 - **Alibaba Cloud Qwen Team** for providing the powerful [Qwen3-Coder](https://github.com/QwenLM/Qwen3-Coder) model and [Qwen-Code](https://github.com/QwenLM/qwen-code) reference implementation
+- **OpenAI** for the [Codex](https://github.com/openai/codex) project, which provided valuable ideas and references for the Codex-style agent design in this project
 - **ByteDance** for the [trae-agent](https://github.com/bytedance/trae-agent) project, which provided valuable foundational architecture for this project
 - **Yuyz0112** for the [claude-code-reverse](https://github.com/Yuyz0112/claude-code-reverse) project, and **shareAI-lab** for the [Kode](https://github.com/shareAI-lab/Kode) project, both of which provided inspiration for the Claude code agent development in this project
 
