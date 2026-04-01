@@ -8,20 +8,38 @@
 
 ![Pywen Logo](./docs/Pywen.png)
 
-**Pywen** 是一个基于 **Qwen3-Coder** 的 Python CLI 工具，专为智能软件工程任务设计。它提供对话式界面，能够理解自然语言指令并通过先进的智能体系统执行复杂的开发工作流。
+**Pywen** 是一个面向透明工程实践与可复现研究的全栈 Python Code Agent 平台。它既是开发者可直接使用的智能编程助手，也是一个可对比、可调试、可持续演进的统一智能体底座。
+
+## 🎯 项目定位
+
+Pywen 的定位是 Code Agent 生态的统一底座，具有双重角色：
+
+- **公平竞技场（研究视角）**：为不同 Code Agent 提供可复现、可比较的统一评测环境
+- **智能体操作系统（工程视角）**：提供稳定可演化的运行环境，支撑从原型到生产的连续过渡
+
+核心设计目标：
+
+- **迁移复现**：在统一 Python 框架中还原多类智能体行为
+- **公平比较**：统一工具接口与评测流程，保证对比一致性
+- **稳态演化**：模块化架构支持模型与组件平滑迭代
+- **工程落地**：通过权限控制、审批流程与轨迹审计满足治理要求
 
 ## 🧬 近期更新
 
-- **最新**：重构核心智能体命名，从 QwenAgent 改为 PywenAgent，提升清晰度和一致性
+- 2026.01.25 上线 **Skills 系统**，支持可复用能力注入与模块化扩展。介绍文章：https://mp.weixin.qq.com/s/8t6JtpT9ARB7hy3fow6xkA
+- 2025.12.29 发布 **Pywen 2.0**，完成面向可维护性与扩展性的核心重构。介绍文章：https://mp.weixin.qq.com/s/U1XBBNLGWObU5MOdTZcECQ
+- 2025.11.26 重构核心智能体命名，从 QwenAgent 改为 PywenAgent，提升清晰度和一致性
 - 2025.08.26 更新 `/agent` 模块，新增Claude Code智能体，执行逻辑对标Claude Code，实现task tool、todowrite tool等专有工具。你可以使用`/agent claude`切换为Claude Code智能体。
 - 2025.08.08 更新 `/agent` 切换智能体模块，新增DeepResearch 智能体，执行逻辑对标Google开源的DeepResearch LangGraph版本。你可以使用`/agent research`切换为 GeminiResearchDemo 智能体。在你使用之前，请确保你具有serper api key。
 - 2025.08.06 更新第一版Pywen，执行逻辑对标Gemini CLI/Qwen Code
 
 ## 🎯 项目背景
 
-Pywen 核心基于[**Qwen3-Coder**](https://github.com/QwenLM/Qwen3-Coder)大语言模型，旨在为开发者提供一个高效、智能的代码助手。项目主要从[**Qwen-Code**](https://github.com/QwenLM/qwen-code)修改而来，针对 Python 开发者和 Qwen3-Coder 模型进行了深度优化。
+Pywen 的提出，源于 Python 开发者在现有 Code Agent 工具中普遍遇到的痛点：技术栈割裂、可观测性不足、定制成本高、跨智能体比较困难。
 
-### 为什么选择 Qwen3-Coder？
+在实现层面，Pywen 参考并吸收了 [**Qwen-Code**](https://github.com/QwenLM/qwen-code)、[**Codex**](https://github.com/openai/codex) 等项目经验，可结合 [**Qwen3-Coder**](https://github.com/QwenLM/Qwen3-Coder) 等代码模型使用。我们对这些开源项目的贡献表示感谢。
+
+### 模型选择（以 Qwen3-Coder 为例）
 
 - 🚀 **代码专精**：Qwen3-Coder 在代码生成、理解和修复方面表现卓越
 - ⚡ **高效推理**：优化的模型架构，提供快速响应
@@ -31,13 +49,13 @@ Pywen 核心基于[**Qwen3-Coder**](https://github.com/QwenLM/Qwen3-Coder)大语
 
 ## 与其他 Code Agent CLI 的区别
 
-Pywen 是一个基于 Python 开发的 CLI 工具，具有良好的 Python 生态兼容性和开发友好性。它提供 **透明、模块化的架构**，使研究人员和开发者可以轻松修改、扩展与分析，从而成为 **研究 AI Agent 架构、开展消融研究、开发新型 Agent 能力** 的理想平台。这种 **研究友好的设计**，让学术界与开源社区能够更便捷地为基础 Agent 框架做出贡献并构建创新应用，助力 AI Agent 快速发展领域的持续突破。
+Pywen 是 Python 原生 CLI，强调生态兼容性、执行透明性与模块化可扩展性。它同时面向工程交付与研究迭代：开发者可以清晰观测并控制执行路径，研究者可以在统一环境中进行公平对比与可复现实验。通过“研究友好 + 工程可落地”的设计，Pywen 致力于成为 Code Agent 社区可持续演进的开放基础设施。
 
 
 ## ✨ 特性
 
 - 🤖 **多智能体支持**：Pywen 智能体（基于 Qwen3-Coder）、Claude Code 智能体、Codex 智能体和研究智能体
-- 🚀 **Qwen3-Coder-Plus 驱动**：基于阿里云最新的代码专用大模型
+- 🚀 **多模型支持**：支持 Qwen 及 OpenAI、Anthropic 的兼容 API，便于切换不同模型
 - 📦 **模块化**：基于模块化架构，可扩展和可定制
 - 🛠️ **丰富的工具生态系统**：文件编辑、bash 执行、网络搜索、内存管理等
 - 📊 **轨迹记录**：详细记录所有 Agent 操作以供调试和分析

@@ -7,20 +7,38 @@
 
 ![Pywen Logo](./docs/Pywen.png)
 
-**Pywen** is a Python CLI tool based on **Qwen3-Coder**, designed specifically for intelligent software engineering tasks. It provides a conversational interface that can understand natural language instructions and execute complex development workflows through an advanced agent system.
+**Pywen** is a full-stack Python Code Agent platform built for transparent engineering practice and reproducible research. It serves both as a practical coding assistant for developers and as a unified foundation where different agents can be compared, debugged, and evolved in a controllable environment.
+
+## 🎯 Project Positioning
+
+Pywen is positioned as a unified foundation for the Code Agent ecosystem, with two complementary roles:
+
+- **Fair Arena (Research)**: Reproducible and comparable evaluation environment for different Code Agents
+- **Agent OS (Engineering)**: Stable and evolvable runtime for moving from prototype to production
+
+Core design goals:
+
+- **Reproducibility**: Reconstruct diverse agent behaviors under one Python framework
+- **Fair Comparison**: Standardized tool interfaces and evaluation workflows
+- **Iterative Stability**: Modular architecture for smooth model/tool evolution
+- **Production Readiness**: Permission control, approval flow, and trajectory audit for governance
 
 ## 🧬 Recent Updates
 
-- **Latest**: Refactored core agent naming from QwenAgent to PywenAgent for better clarity and consistency
+- 2026.01.25: Launched the **Skills system** for reusable capability injection and modular extension. Post: https://mp.weixin.qq.com/s/8t6JtpT9ARB7hy3fow6xkA
+- 2025.12.29: Released **Pywen 2.0** with a core refactor focused on maintainability and extensibility. Post: https://mp.weixin.qq.com/s/U1XBBNLGWObU5MOdTZcECQ
+- 2025.11.26: Refactored core agent naming from QwenAgent to PywenAgent for better clarity and consistency
 - 2025.08.26: Updated the `/agent` module by adding the Claude Code agent, with execution logic aligned to Claude Code, and introducing dedicated tools such as the task tool and todowrite tool. You can switch to the Claude Code agent using `/agent claude`.
 - 2025.08.08: Updated the `/agent` switch agent module, added DeepResearch agent, with execution logic aligned with Google's open-source DeepResearch LangGraph version. You can use `/agent research` to switch GeminiResearchDemo agent. Before you use it, please make sure you have the serper api key.
 - 2025.08.06: Released the first version of Pywen, with execution logic aligned with Gemini CLI/Qwen Code
 
 ## 🎯 Project Background
 
-Pywen is built on the [**Qwen3-Coder**](https://github.com/QwenLM/Qwen3-Coder) large language model, aiming to provide developers with an efficient and intelligent code assistant. The project is primarily adapted from [**Qwen-Code**](https://github.com/QwenLM/qwen-code), with deep optimizations for Python developers and the Qwen3-Coder model.
+Pywen was developed in response to common pain points in existing Code Agent tooling for Python users: fragmented tech stacks, limited observability, difficult customization, and poor cross-agent comparability.
 
-### Why Choose Qwen3-Coder?
+From implementation perspective, Pywen references and learns from projects such as [**Qwen-Code**](https://github.com/QwenLM/qwen-code) and [**Codex**](https://github.com/openai/codex), and can run with code-capable models including [**Qwen3-Coder**](https://github.com/QwenLM/Qwen3-Coder). We acknowledge and appreciate these open-source contributions. These are development choices rather than the primary product positioning.
+
+### Model Choice (Example: Qwen3-Coder)
 
 - 🚀 **Code Specialization**: Qwen3-Coder excels in code generation, understanding, and debugging
 - ⚡ **Efficient Inference**: Optimized model architecture providing fast responses
@@ -30,12 +48,12 @@ Pywen is built on the [**Qwen3-Coder**](https://github.com/QwenLM/Qwen3-Coder) l
 
 ## Differences from Other Code Agent CLIs
 
-Pywen is a Python-based CLI tool with excellent Python ecosystem compatibility and developer-friendliness. It provides a **transparent, modular architecture** that allows researchers and developers to easily modify, extend, and analyze, making it an ideal platform for **researching AI Agent architectures, conducting ablation studies, and developing new Agent capabilities**. This **research-friendly design** enables academia and the open-source community to more easily contribute to foundational Agent frameworks and build innovative applications, facilitating continuous breakthroughs in the rapidly evolving AI Agent field.
+Pywen is a Python-native CLI with strong ecosystem compatibility and a transparent modular architecture. It is designed for both practical delivery and scientific iteration: developers can inspect and control execution paths, while researchers can run fair comparisons and reproducible studies in a unified environment. This research-friendly and engineering-oriented design helps build an open, evolvable foundation for the Code Agent community.
 
 ## ✨ Features
 
 - 🤖 **Multi-Agent Support**: Pywen Agent (Qwen3-Coder based), Claude Code Agent, Codex Agent, and Research Agent
-- 🚀 **Qwen3-Coder-Plus Powered**: Based on Alibaba Cloud's latest code-specialized large model
+- 🚀 **Multi-Model Support**: Supports Qwen as well as OpenAI- and Anthropic-compatible APIs, enabling seamless switching between different models
 - 📦 **Modular**: Built on modular architecture, extensible and customizable
 - 🛠️ **Rich Tool Ecosystem**: File editing, bash execution, web search, memory management, and more
 - 📊 **Trajectory Recording**: Detailed logging of all Agent operations for debugging and analysis
