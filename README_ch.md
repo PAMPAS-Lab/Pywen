@@ -474,7 +474,7 @@ echo $PYWEN_API_KEY
 
 ---
 
-**Pywen - 让 Qwen3-Coder 的强大能力触手可及，助力智能软件开发！** 🚀
+**Pywen - 让代码智能体的强大能力触手可及，助力智能软件开发！** 🚀
 
 **PAMPAS-Lab - 致力于大模型智能体框架突破，为 AI 研究与应用架桥铺路！** 🚀
 
@@ -482,4 +482,10 @@ echo $PYWEN_API_KEY
 
 ## 🌟Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=PAMPAS-Lab/Pywen&type=Date)](https://www.star-history.com/#PAMPAS-Lab/Pywen&Date)
+<a href="https://www.star-history.com/?repos=PAMPAS-Lab%2FPywen&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=PAMPAS-Lab/Pywen&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=PAMPAS-Lab/Pywen&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=PAMPAS-Lab/Pywen&type=date&legend=top-left" />
+ </picture>
+</a>

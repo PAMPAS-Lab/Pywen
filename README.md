@@ -488,7 +488,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Pywen - Making the power of Qwen3-Coder accessible for intelligent software development!** 🚀
+**Pywen - Making the power of Code Agent accessible for intelligent software development!** 🚀
 
 **PAMPAS-Lab - Dedicated to breakthroughs in large model agent frameworks, bridging AI research and applications!** 🚀
 
@@ -496,4 +496,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🌟Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=PAMPAS-Lab/Pywen&type=Date)](https://www.star-history.com/#PAMPAS-Lab/Pywen&Date)
+<a href="https://www.star-history.com/?repos=PAMPAS-Lab%2FPywen&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=PAMPAS-Lab/Pywen&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=PAMPAS-Lab/Pywen&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=PAMPAS-Lab/Pywen&type=date&legend=top-left" />
+ </picture>
+</a>
