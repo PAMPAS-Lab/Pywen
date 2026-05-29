@@ -1,6 +1,6 @@
 [project]
 name = "pywen"
-version = "2.0.0"
+version = "2.0.0a3"
 description = "LLM-based agent for general purpose tasks"
 authors = [
   { name ="PAMPAS-Lab" },
@@ -40,6 +40,7 @@ dependencies = [
     "mcp>=1.13.0",
     "pytest>=8.0.0",
     "pyyaml>=6.0",
+    "pytest-asyncio>=1.4.0",
 ]
 
 [project.optional-dependencies]
