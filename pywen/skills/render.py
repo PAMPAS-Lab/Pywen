@@ -1,10 +1,28 @@
-"""Render skills metadata for prompt context."""
+"""Render skills metadata for prompt context.
+
+When version is present on a skill, it is shown alongside the name.
+When a query is provided and the skill count exceeds top_k, only the
+most relevant skills are included in the output.
+"""
 from __future__ import annotations
+from typing import List, Optional
+
 from .models import SkillMetadata
 
-def render_skills_section(skills: list[SkillMetadata]) -> str | None:
+
+def render_skills_section(
+    skills: List[SkillMetadata],
+    query: Optional[str] = None,
+    top_k: int = 10,
+) -> Optional[str]:
     if not skills:
         return None
+
+    # Apply relevance-based filtering when query is provided
+    display_skills = skills
+    if query and len(skills) > top_k:
+        from .ranker import rank_skills_by_relevance
+        display_skills = rank_skills_by_relevance(skills, query, top_k)
 
     lines: list[str] = []
     lines.append("## Skills")
@@ -12,9 +30,10 @@ def render_skills_section(skills: list[SkillMetadata]) -> str | None:
         "These skills are discovered at startup from multiple local sources. Each entry includes a name, description, and file path so you can open the source for full instructions."
     )
 
-    for skill in skills:
+    for skill in display_skills:
         path_str = skill.path.as_posix()
-        lines.append(f"- {skill.name}: {skill.description} (file: {path_str})")
+        version_str = f" v{skill.version}" if skill.version else ""
+        lines.append(f"- {skill.name}{version_str}: {skill.description} (file: {path_str})")
 
     lines.append(
         """- Discovery: Available skills are listed in project docs and may also appear in a runtime "## Skills" section (name + description + file path). These are the sources of truth; skill bodies live on disk at the listed paths.
@@ -34,6 +53,6 @@ def render_skills_section(skills: list[SkillMetadata]) -> str | None:
   - Avoid deeply nested references; prefer one-hop files explicitly linked from `SKILL.md`.
   - When variants exist (frameworks, providers, domains), pick only the relevant reference file(s) and note that choice.
 - Safety and fallback: If a skill can't be applied cleanly (missing files, unclear instructions), state the issue, pick the next-best approach, and continue."""
-)
+    )
 
     return "\n".join(lines)

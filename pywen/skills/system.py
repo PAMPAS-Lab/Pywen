@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import hashlib
+from datetime import datetime
 from pathlib import Path
 
 SYSTEM_SKILLS_DIR_NAME = ".system"
@@ -41,6 +42,18 @@ def install_system_skills(pywen_home: Path, embedded_skills_dir: Path | None = N
         marker_path.write_text(f"{expected_fingerprint}\n", encoding="utf-8")
     except OSError as err:
         raise SystemSkillsError(f"write system skills marker: {err}") from err
+
+    # Emit audit event for system skills installation
+    try:
+        from .audit import emit, AuditEvent, AuditEventType
+        emit(AuditEvent(
+            event=AuditEventType.SYSTEM_SKILLS_INSTALLED,
+            timestamp=datetime.now().isoformat(),
+            skill_path=str(dest_system),
+            details={"fingerprint": expected_fingerprint},
+        ))
+    except Exception:
+        pass  # Audit failure should not break the main flow
 
 def embedded_system_skills_fingerprint(embedded_dir: Path) -> str:
     items: list[tuple[str, str | None]] = []
