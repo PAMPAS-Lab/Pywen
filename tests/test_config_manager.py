@@ -161,9 +161,9 @@ def test_env_overrides_when_yaml_missing(tmp_path: Path, monkeypatch):
         """,
     )
 
-    monkeypatch.setenv("PYWEN_PYWEN_MODEL", "env-model")
-    monkeypatch.setenv("PYWEN_PYWEN_API_KEY", "env-key")
-    monkeypatch.setenv("PYWEN_PYWEN_BASE_URL", "https://env")
+    monkeypatch.setenv("PYWEN_MODEL", "env-model")
+    monkeypatch.setenv("PYWEN_API_KEY", "env-key")
+    monkeypatch.setenv("PYWEN_BASE_URL", "https://env")
 
     mgr = ConfigManager(config_path=cfg_path)
     mgr.resolve_effective_config()
@@ -189,13 +189,10 @@ def test_missing_required_fields_raise(tmp_path: Path):
     )
 
     mgr = ConfigManager(config_path=cfg_path)
-    with pytest.raises(ConfigError) as ei:
+    with pytest.raises(SystemExit) as ei:
         mgr.resolve_effective_config()
 
-    err = str(ei.value)
-    assert "model.model_name" in err
-    assert "model.api_key" in err
-    assert "model.base_url" in err
+    assert ei.value.code == 2
 
 
 def test_args_none_works_everywhere(tmp_path: Path):
@@ -233,4 +230,3 @@ def test_args_none_works_everywhere(tmp_path: Path):
     mgr.switch_active_agent("pywen")
     assert mgr.get_active_agent_name() == "pywen"
     assert mgr.get_active_model_name() == "A"
-

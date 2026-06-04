@@ -217,12 +217,20 @@ class ConfigManager:
         return md_prompt
 
     def get_skills_prompt(self, args: Any | None = None) -> str:
-        """ 获取项目Skills专用配置 """
+        """Build the skills section for the system prompt.
+
+        Unlike the original logic that skipped rendering entirely when any
+        error was present, this version renders successfully parsed skills
+        even when some errors occurred, and appends a short warning summary.
+        """
         skill_mgr = SkillsManager(self.get_pywen_config_dir())
         outcome = skill_mgr.skills_for_cwd()
         skills_section: Optional[str] = None
-        if not outcome.errors and outcome.skills:
+        if outcome.skills:
             skills_section = render_skills_section(outcome.skills)
+            if outcome.errors:
+                error_lines = [f"⚠️ {e.message}" for e in outcome.errors[:3]]
+                skills_section += "\n\n### Warnings\n" + "\n".join(error_lines)
         app_cfg = self.get_app_config(args)
         app_cfg.runtime["skills_prompt"] = skills_section
 

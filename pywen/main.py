@@ -1,20 +1,23 @@
 from __future__ import annotations
+
 import argparse
 import asyncio
+import sys
 import uuid
+
 from pywen import get_version
-from pywen.utils.permission_manager import PermissionLevel, PermissionManager
-from pywen.config.manager import ConfigManager
 from pywen.agents.agent_manager import AgentManager
 from pywen.cli.cli_console import CLIConsole
+from pywen.cli.runtime import HeadlessRunner, InteractiveSession
+from pywen.config.manager import ConfigManager
 from pywen.hooks.config import load_hooks_config
 from pywen.hooks.manager import HookManager
 from pywen.hooks.models import HookEvent
-from pywen.tools.tool_manager import ToolManager 
-from pywen.cli.runtime import HeadlessRunner, InteractiveSession
+from pywen.tools.tool_manager import ToolManager
+from pywen.utils.permission_manager import PermissionLevel, PermissionManager
 
-async def async_main() -> None:
-    """Main CLI entry point."""
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Pywen Python Agent")
     parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {get_version()}")
     parser.add_argument("--config", type=str, default=None, help="Config file path (default: ~/.pywen/pywen/pywen_config.json)")
@@ -27,7 +30,39 @@ async def async_main() -> None:
     parser.add_argument("--permission-mode", type=str, help="Set permission mode (yolo, planning, edit-only, locked)", default="locked")
     parser.add_argument("--agent", type=str, help="Use specific agent: pywen|claude|codex", default="pywen")
     parser.add_argument("-p", "--prompt", nargs="?", help="Prompt to execute")
+
+    subparsers = parser.add_subparsers(dest="command")
+    skill_parser = subparsers.add_parser("skill", help="Skill management commands")
+    skill_subparsers = skill_parser.add_subparsers(dest="skill_command", required=True)
+    health_parser = skill_subparsers.add_parser("health-check", help="Check installed skills")
+    health_parser.add_argument("--json", action="store_true", dest="use_json", help="Output JSON")
+    return parser
+
+
+def run_skill_command(args: argparse.Namespace) -> None:
+    if args.skill_command != "health-check":
+        raise SystemExit(2)
+
+    from pywen.skills import SkillsManager, run_health_check_cli
+
+    cfg_mgr = ConfigManager(args.config)
+    skill_mgr = SkillsManager(cfg_mgr.get_pywen_config_dir())
+    outcome = skill_mgr.skills_for_cwd()
+
+    exit_code = run_health_check_cli(outcome.skills, use_json=args.use_json)
+    if outcome.errors:
+        for error in outcome.errors:
+            print(f"Load error: {error.path}: {error.message}", file=sys.stderr)
+        exit_code = 1
+    raise SystemExit(exit_code)
+
+
+async def async_main() -> None:
+    """Main CLI entry point."""
+    parser = build_parser()
     args = parser.parse_args()
+    if args.command == "skill":
+        run_skill_command(args)
 
     cfg_mgr = ConfigManager(args.config)
     config = cfg_mgr.get_app_config(args)
