@@ -6,17 +6,19 @@ rather than performing a full reload of all skill roots.
 """
 from __future__ import annotations
 
+from contextlib import suppress
 from pathlib import Path
-from typing import Optional
 from threading import RLock
+from typing import Optional
+
+from .loader import (
+    SkillParseError,
+    load_skills_from_roots,
+    parse_skill_file,
+    skill_roots_for_cwd,
+)
 from .models import SkillError, SkillLoadOutcome, SkillMetadata, SkillRoot, SkillScope
 from .system import install_system_skills
-from .loader import (
-    load_skills_from_roots,
-    skill_roots_for_cwd,
-    parse_skill_file,
-    SkillParseError,
-)
 
 
 class SkillsManager:
@@ -74,14 +76,10 @@ class SkillsManager:
         roots = _roots(self._pywen_home, cwd)
         for root in roots:
             if root.path.is_dir():
-                try:
+                with suppress(OSError):
                     for skill_file in root.path.rglob("SKILL.md"):
-                        try:
+                        with suppress(OSError):
                             snapshot[skill_file.resolve()] = skill_file.stat().st_mtime
-                        except OSError:
-                            pass
-                except OSError:
-                    pass
         return snapshot
 
     def _has_changed(self, cwd: Path) -> bool:
@@ -102,7 +100,6 @@ class SkillsManager:
         4. Re-run deduplication and dependency checks on the merged set.
         """
         from .dependency_resolver import check_dependencies
-        import time
 
         current_mtimes = self._collect_skill_mtimes(cwd)
         prev_mtimes = self._detailed_mtime.get(cwd, {})
@@ -162,6 +159,7 @@ class SkillsManager:
 
         # Merge and re-run dedup + dependency check
         merged_skills = unchanged_skills + newly_parsed
+        merged_skills.sort(key=self._skill_priority_key(roots))
 
         # Deduplicate by name (first occurrence wins, matching full-load behavior)
         seen: set[str] = set()
@@ -174,16 +172,19 @@ class SkillsManager:
         deduped.sort(key=lambda s: (s.name, str(s.path)))
 
         # Carry over previous errors for deleted/unchanged, plus new errors
+        dependency_error_path = Path("<dependency>")
         prev_errors_kept = [
             e for e in prev.errors
-            if str(e.path) not in deleted_strs and str(e.path) not in changed_strs
+            if e.path != dependency_error_path
+            and str(e.path) not in deleted_strs
+            and str(e.path) not in changed_strs
         ]
         all_errors = prev_errors_kept + new_errors
 
         # Re-check dependencies on the merged set
         dep_issues = check_dependencies(deduped)
         for issue in dep_issues:
-            all_errors.append(SkillError(path=Path("<dependency>"), message=issue))
+            all_errors.append(SkillError(path=dependency_error_path, message=issue))
 
         return SkillLoadOutcome(
             skills=deduped,
@@ -191,3 +192,41 @@ class SkillsManager:
             load_duration_ms=prev.load_duration_ms,
             parse_durations_ms=dict(prev.parse_durations_ms),
         )
+
+    def _skill_priority_key(self, roots: list[SkillRoot]):
+        """Return a sort key that preserves full-load root precedence."""
+        root_paths: list[tuple[int, Path]] = []
+        for index, root in enumerate(roots):
+            try:
+                root_paths.append((index, root.path.resolve()))
+            except OSError:
+                root_paths.append((index, root.path))
+
+        scope_priority = {
+            SkillScope.REPO: 0,
+            SkillScope.USER: 1,
+            SkillScope.SYSTEM: 2,
+            SkillScope.ADMIN: 3,
+        }
+
+        def key(skill: SkillMetadata) -> tuple[int, int, str]:
+            try:
+                resolved = skill.path.resolve()
+            except OSError:
+                resolved = skill.path
+
+            fallback_index = len(root_paths)
+            for index, root_path in root_paths:
+                try:
+                    resolved.relative_to(root_path)
+                    return (index, scope_priority.get(skill.scope, fallback_index), str(resolved))
+                except ValueError:
+                    continue
+
+            return (
+                fallback_index,
+                scope_priority.get(skill.scope, fallback_index),
+                str(resolved),
+            )
+
+        return key

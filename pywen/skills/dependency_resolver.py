@@ -68,7 +68,7 @@ def _compare_versions(v1: str, v2: str) -> int:
                 pre2_str = "-".join(pre2)
                 pre1_parts = pre1_str.split(".")
                 pre2_parts = pre2_str.split(".")
-                for p1, p2 in zip(pre1_parts, pre2_parts):
+                for p1, p2 in zip(pre1_parts, pre2_parts, strict=False):
                     # Numeric identifiers compare numerically
                     if p1.isdigit() and p2.isdigit():
                         n1, n2 = int(p1), int(p2)
@@ -152,6 +152,17 @@ def check_dependencies(skills: List[SkillMetadata]) -> List[str]:
                 continue
 
             dep_skill = skill_index[dep.name]
+            if (dep.min_version or dep.max_version) and not dep_skill.version:
+                constraints = []
+                if dep.min_version:
+                    constraints.append(f">= {dep.min_version}")
+                if dep.max_version:
+                    constraints.append(f"<= {dep.max_version}")
+                issues.append(
+                    f"Skill '{skill.name}' requires '{dep.name}' "
+                    f"{' and '.join(constraints)}, but '{dep.name}' does not declare a version."
+                )
+                continue
 
             # Minimum version
             if dep.min_version and dep_skill.version:

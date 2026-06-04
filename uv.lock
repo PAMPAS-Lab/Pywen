@@ -3760,7 +3760,7 @@ wheels = [
 
 [[package]]
 name = "pywen"
-version = "2.0.0"
+version = "2.0.0a3"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
