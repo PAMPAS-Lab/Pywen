@@ -67,8 +67,9 @@ def test_load_default_agent(sample_yaml_config):
 
     cfg = mgr.get_app_config(args)
 
-    assert cfg.active_agent_name == "pywen"
-    assert cfg.active_agent.model == "qwen3-coder"
+    assert cfg.runtime["active_agent"] == "pywen"
+    assert mgr.get_active_agent_name(args) == "pywen"
+    assert mgr.get_active_model_name(args) == "qwen3-coder"
 
 
 def test_switch_agent(sample_yaml_config):
@@ -81,8 +82,9 @@ def test_switch_agent(sample_yaml_config):
     mgr.get_app_config(args)
     cfg2 = mgr.switch_active_agent("claude", args)
 
-    assert cfg2.active_agent_name == "claude"
-    assert cfg2.active_agent.model == "claude-4.5"
+    assert cfg2.runtime["active_agent"] == "claude"
+    assert mgr.get_active_agent_name(args) == "claude"
+    assert mgr.get_active_model_name(args) == "claude-4.5"
 
 
 def test_cli_override(sample_yaml_config):
@@ -95,10 +97,11 @@ def test_cli_override(sample_yaml_config):
         model="cli_model",
     )
     mgr = ConfigManager(args.config)
-    cfg = mgr.get_app_config(args)
+    mgr.get_app_config(args)
+    active_agent = mgr.get_active_agent(args)
 
-    assert cfg.active_agent.api_key == "cli_api_key"
-    assert cfg.active_agent.model == "cli_model"
+    assert active_agent.model.api_key == "cli_api_key"
+    assert active_agent.model.model_name == "cli_model"
 
 
 def test_env_fallback(sample_yaml_config, monkeypatch):
@@ -114,12 +117,12 @@ def test_env_fallback(sample_yaml_config, monkeypatch):
     new_file.close()
 
     # 设置环境变量
-    monkeypatch.setenv("PYWEN_PYWEN_API_KEY", "env_api_key")
+    monkeypatch.setenv("PYWEN_API_KEY", "env_api_key")
 
     args = DummyArgs(config=new_file.name)
 
     mgr = ConfigManager(args.config)
-    cfg = mgr.get_app_config(args)
+    mgr.get_app_config(args)
+    active_agent = mgr.get_active_agent(args)
 
-    assert cfg.active_agent.api_key == "env_api_key"
-
+    assert active_agent.model.api_key == "env_api_key"
