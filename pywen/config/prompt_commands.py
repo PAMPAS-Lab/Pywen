@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple 
+from typing import Dict, List, Tuple
+
 
 @dataclass(frozen=True)
 class PromptSpec:
@@ -233,7 +235,4 @@ def _is_valid_named_key(k: str) -> bool:
     """
     if not k or not k[0].isalpha():
         return False
-    for ch in k:
-        if not (ch.isalpha() or ch.isdigit() or ch == "_"):
-            return False
-    return True
+    return all(ch.isalpha() or ch.isdigit() or ch == "_" for ch in k)

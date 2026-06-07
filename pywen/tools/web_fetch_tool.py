@@ -1,10 +1,13 @@
 import asyncio
-import aiohttp
 import html
 import re
 from typing import Any, Mapping
-from .base_tool import BaseTool, ToolCallResult
+
+import aiohttp
+
 from pywen.tools.tool_manager import register_tool
+
+from .base_tool import BaseTool, ToolCallResult
 
 CLAUDE_DESCRIPTION = """
 - Fetches content from a specified URL and processes it using an AI model
@@ -64,7 +67,7 @@ class WebFetchTool(BaseTool):
             
             return text
             
-        except Exception as e:
+        except Exception:
             # 简单的后备方案
             text = re.sub(r'<[^>]+>', '', html_content)
             text = re.sub(r'\s+', ' ', text).strip()
@@ -90,25 +93,27 @@ class WebFetchTool(BaseTool):
         }
         
         try:
-            async with aiohttp.ClientSession(headers=headers) as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
-                    if response.status == 200:
-                        html_content = await response.text()
-                        clean_text = self._clean_html_content(html_content)
-                        return ToolCallResult(
-                            call_id="",
-                            result=f"Content from {url}:\n\n{clean_text}"
-                        )
-                    elif response.status == 403:
-                        return ToolCallResult(
-                            call_id="",
-                            error=f"Access denied (403) for {url}. Website may have anti-bot protection."
-                        )
-                    else:
-                        return ToolCallResult(
-                            call_id="",
-                            error=f"HTTP {response.status}: Failed to fetch {url}"
-                        )
+            async with (
+                aiohttp.ClientSession(headers=headers) as session,
+                session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as response,
+            ):
+                if response.status == 200:
+                    html_content = await response.text()
+                    clean_text = self._clean_html_content(html_content)
+                    return ToolCallResult(
+                        call_id="",
+                        result=f"Content from {url}:\n\n{clean_text}"
+                    )
+                elif response.status == 403:
+                    return ToolCallResult(
+                        call_id="",
+                        error=f"Access denied (403) for {url}. Website may have anti-bot protection."
+                    )
+                else:
+                    return ToolCallResult(
+                        call_id="",
+                        error=f"HTTP {response.status}: Failed to fetch {url}"
+                    )
         
         except asyncio.TimeoutError:
             return ToolCallResult(call_id="", error=f"Timeout fetching {url}")

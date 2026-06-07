@@ -3,7 +3,8 @@ Token counting utilities - Python version of Kode's tokens.ts
 Direct translation from TypeScript to Python
 """
 
-from typing import List, Optional, Dict, Any, Union
+from typing import Dict, List
+
 from pywen.llm.llm_basics import LLMMessage
 
 # Synthetic assistant messages that should be ignored for token counting

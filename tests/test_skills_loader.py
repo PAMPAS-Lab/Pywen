@@ -1,12 +1,9 @@
 from __future__ import annotations
-from pathlib import Path
-import sys
-import textwrap
-import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+import textwrap
+from pathlib import Path
+
+import pytest
 
 from pywen.skills.loader import (
     MAX_DESCRIPTION_LEN,
@@ -18,16 +15,18 @@ from pywen.skills.loader import (
 )
 from pywen.skills.models import SkillRoot, SkillScope
 
+
 def write_skill(root: Path, name: str, description: str, short_desc: str | None = None) -> Path:
     skill_dir = root / name
     skill_dir.mkdir(parents=True, exist_ok=True)
     short_block = ""
     if short_desc is not None:
         short_block = f"metadata:\n  short-description: {short_desc}\n"
+    description_block = description.replace("\n", "\n  ")
     content = textwrap.dedent(f"""\
 ---
 name: {name}
-description: {description.replace("\n", "\n  ")}
+description: {description_block}
 {short_block}
 ---
 

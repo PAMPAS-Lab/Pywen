@@ -1,8 +1,11 @@
 """清屏命令实现"""
 import os
+
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-from .base_command import BaseCommand, CommandResult, CommandAction
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class ClearCommand(BaseCommand):
     def __init__(self):

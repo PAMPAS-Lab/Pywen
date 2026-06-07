@@ -1,10 +1,14 @@
 from __future__ import annotations
-from types import SimpleNamespace
-from pathlib import Path
-import pytest
+
 import textwrap
-from pywen.config.manager import ConfigManager, ConfigError
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
 from pywen.config.config import AppConfig
+from pywen.config.manager import ConfigManager
+
 
 def create_config_file(tmp_path: Path, content: str) -> Path:
     """

@@ -1,10 +1,14 @@
 import asyncio
 import os
 import shlex
-from typing import Any, List, Optional, Mapping
+from typing import Any, List, Mapping, Optional
+
 from typing_extensions import override
-from .base_tool import BaseTool, ToolCallResult, ToolRiskLevel
+
 from pywen.tools.tool_manager import register_tool
+
+from .base_tool import BaseTool, ToolCallResult, ToolRiskLevel
+
 
 def _assert_command_list(command: Any) -> List[str]:
     if not (isinstance(command, list) and all(isinstance(x, str) for x in command)):
@@ -61,9 +65,7 @@ class CodexShellTool(BaseTool):
             _assert_command_list(kwargs.get("command"))
         except Exception:
             return False
-        if kwargs.get("with_escalated_permissions") and not kwargs.get("justification"):
-            return False
-        return True
+        return not (kwargs.get("with_escalated_permissions") and not kwargs.get("justification"))
 
     def get_risk_level(self, **kwargs) -> ToolRiskLevel:
         try:

@@ -1,21 +1,27 @@
-import os
 import datetime
 import json
-from typing import Dict, List, Optional, AsyncGenerator, Any
+import os
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
+from pywen.agents.agent_events import Agent_Events, AgentEvent
 from pywen.agents.base_agent import BaseAgent
-from pywen.llm.llm_basics import LLMResponse, LLMMessage, ToolCall, ToolCallResult
-from pywen.llm.llm_events import LLM_Events
-from pywen.utils.trajectory_recorder import TrajectoryRecorder
-from pywen.utils.session_stats import session_stats
-from pywen.config.token_limits import TokenLimits
-from pywen.config.manager import ConfigManager
-from pywen.agents.agent_events import AgentEvent, Agent_Events
 from pywen.agents.claude.system_reminder import (
-        generate_system_reminders, emit_reminder_event, reset_reminder_session,
-        get_system_reminder_start,emit_tool_execution_event
-        )
-from .prompts import ClaudeCodePrompts
+    emit_reminder_event,
+    emit_tool_execution_event,
+    generate_system_reminders,
+    get_system_reminder_start,
+    reset_reminder_session,
+)
+from pywen.config.manager import ConfigManager
+from pywen.config.token_limits import TokenLimits
+from pywen.llm.llm_basics import LLMMessage, LLMResponse, ToolCall, ToolCallResult
+from pywen.llm.llm_events import LLM_Events
+from pywen.utils.session_stats import session_stats
+from pywen.utils.trajectory_recorder import TrajectoryRecorder
+
 from .context_manager import ClaudeCodeContextManager
+from .prompts import ClaudeCodePrompts
+
 
 class ClaudeAgent(BaseAgent):
     def __init__(self, config_mgr:ConfigManager, cli, tool_mgr):
@@ -163,7 +169,7 @@ class ClaudeAgent(BaseAgent):
             self.context = self.context_manager.get_context()
             additional_context = self.prompts.build_context(self.project_path)
             self.context.update(additional_context)
-        except Exception as e:
+        except Exception:
             self.context = {'project_path': self.project_path}
 
     def reset_conversation(self):
@@ -197,7 +203,7 @@ class ClaudeAgent(BaseAgent):
                     )
 
             return bool(content)
-        except Exception as e:
+        except Exception:
             return False
 
     async def _detect_new_topic(self, user_input: str) -> Optional[Dict[str, Any]]:
@@ -247,7 +253,7 @@ class ClaudeAgent(BaseAgent):
                 except json.JSONDecodeError:
                     return None
             return None
-        except Exception as e:
+        except Exception:
             return None  
 
     async def _query_recursive(self, messages: List[LLMMessage], depth: int = 0) -> AsyncGenerator[AgentEvent, None]:
@@ -265,11 +271,14 @@ class ClaudeAgent(BaseAgent):
                     # 将流式阶段的错误直接透传给上层，避免后续空响应误报
                     yield event
                     return
-                elif event.type == Agent_Events.USER_DEFINED:
-                    if event.data and event.data["type"] == "assistant_response":
-                        assistant_message = event.data["assistant_message"]
-                        tool_calls = event.data["tool_calls"]
-                        final_response = event.data.get("final_response")
+                elif (
+                    event.type == Agent_Events.USER_DEFINED
+                    and event.data
+                    and event.data["type"] == "assistant_response"
+                ):
+                    assistant_message = event.data["assistant_message"]
+                    tool_calls = event.data["tool_calls"]
+                    final_response = event.data.get("final_response")
             if assistant_message:
                 self.conversation_history.append(assistant_message)
                 llm_response = LLMResponse(

@@ -1,11 +1,14 @@
 from __future__ import annotations
+
 import os
 import re
 import time
-import yaml
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
+
+import yaml
+
 from .models import (
     SkillDependency,
     SkillError,
@@ -160,8 +163,8 @@ def discover_skills_under_root(root: Path, scope: SkillScope, outcome: SkillLoad
 
 def parse_skill_file(path: Path, scope: SkillScope) -> SkillMetadata:
     """Parse a SKILL.md file with security scanning and audit logging."""
-    from .security import scan_skill_content, RiskLevel, is_trusted_path
-    from .audit import emit, AuditEvent, AuditEventType
+    from .audit import AuditEvent, AuditEventType, emit
+    from .security import RiskLevel, is_trusted_path, scan_skill_content
 
     parse_start = time.monotonic()
 
@@ -299,7 +302,7 @@ def parse_skill_file(path: Path, scope: SkillScope) -> SkillMetadata:
 def _emit_load_failed(path: Path, scope: SkillScope, error: str) -> None:
     """Emit a skill_load_failed audit event."""
     try:
-        from .audit import emit, AuditEvent, AuditEventType
+        from .audit import AuditEvent, AuditEventType, emit
         emit(AuditEvent(
             event=AuditEventType.SKILL_LOAD_FAILED,
             timestamp=datetime.now().isoformat(),
@@ -314,7 +317,7 @@ def _emit_load_failed(path: Path, scope: SkillScope, error: str) -> None:
 def _emit_security_violation(path: Path, scope: SkillScope, rule_name: str, context: str) -> None:
     """Emit a security_violation audit event."""
     try:
-        from .audit import emit, AuditEvent, AuditEventType
+        from .audit import AuditEvent, AuditEventType, emit
         emit(AuditEvent(
             event=AuditEventType.SECURITY_VIOLATION,
             timestamp=datetime.now().isoformat(),

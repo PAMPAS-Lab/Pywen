@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
 
 @dataclass
 class ToolCall:
@@ -119,6 +120,6 @@ class LLMResponse:
             content=data.get("content", ""),
             tool_calls= tc, 
             usage=usage,
-            model=data.get("model", None),
+            model=data.get("model"),
             finish_reason=data.get("finish_reason")
         )

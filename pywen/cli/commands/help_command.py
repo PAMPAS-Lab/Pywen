@@ -1,8 +1,12 @@
 """帮助命令实现"""
 from __future__ import annotations
+
 from typing import Any, Dict, List, Tuple
+
 from rich.panel import Panel
-from .base_command import BaseCommand, CommandResult, CommandAction
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class HelpCommand(BaseCommand):
     def __init__(self) -> None:

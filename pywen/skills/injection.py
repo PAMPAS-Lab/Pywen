@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from .audit import emit, AuditEvent, AuditEventType
-from .models import SkillInjections, SkillLoadOutcome, SkillMetadata, SkillInstructions, UserInput
+
+from .audit import AuditEvent, AuditEventType, emit
+from .models import SkillInjections, SkillInstructions, SkillLoadOutcome, SkillMetadata, UserInput
 
 
 def build_skill_injections(inputs: list[UserInput], skills: SkillLoadOutcome | None,) -> SkillInjections:

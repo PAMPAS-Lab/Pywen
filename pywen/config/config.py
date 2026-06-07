@@ -1,6 +1,9 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Literal, Tuple
+
+from typing import Any, Dict, List, Literal, Optional, Tuple
+
 from pydantic import BaseModel, Field
+
 
 class ModelConfig(BaseModel):
     model_name: str

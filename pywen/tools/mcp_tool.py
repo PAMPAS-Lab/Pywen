@@ -1,21 +1,25 @@
 from __future__ import annotations
-import os
-import json
-import base64
+
 import asyncio
-import fnmatch
-import shutil
+import base64
 import contextlib
+import fnmatch
+import json
+import os
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, Iterable, Optional, List, Tuple,Mapping
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
-from pywen.tools.base_tool import BaseTool, ToolRiskLevel
-from pywen.llm.llm_basics import ToolCallResult, ToolCallResultDisplay
+
 from pywen.config.manager import ConfigManager
-from pywen.tools.tool_manager import register_instance 
+from pywen.llm.llm_basics import ToolCallResult, ToolCallResultDisplay
+from pywen.tools.base_tool import BaseTool, ToolRiskLevel
+from pywen.tools.tool_manager import register_instance
+
 
 def _make_tool_result(
     call_id: str,
@@ -78,12 +82,11 @@ class MCPServerManager:
             async def _owner():
                 ctx = streamablehttp_client(command)
                 self._ctxs[name] = ctx
-                async with ctx as (read, write, _):
-                    async with ClientSession(read, write) as sess:
-                        await sess.initialize() 
-                        self._sessions[name] = sess
-                        self._ready[name].set()
-                        await stop.wait()
+                async with ctx as (read, write, _), ClientSession(read, write) as sess:
+                    await sess.initialize()
+                    self._sessions[name] = sess
+                    self._ready[name].set()
+                    await stop.wait()
                 self._sessions.pop(name, None)
                 self._ctxs.pop(name, None)
 
@@ -136,7 +139,7 @@ class MCPServerManager:
                 self._ready.pop(name, None)
                 raise MCPServerLaunchError(
                     f"Timed out waiting for MCP server '{name}' to become ready (timeout={timeout}s)."
-                )
+                ) from None
 
             if task.done() and task.exception():
                 ex = task.exception()
@@ -158,13 +161,12 @@ class MCPServerManager:
         params = StdioServerParameters(command=command, args=args)
         ctx = stdio_client(params)
         try:
-            async with ctx as (read, write):
-                async with ClientSession(read, write) as sess:
-                    await sess.initialize()
-                    self._ctxs[name] = ctx
-                    self._sessions[name] = sess
-                    ready_evt.set()
-                    await stop_evt.wait()
+            async with ctx as (read, write), ClientSession(read, write) as sess:
+                await sess.initialize()
+                self._ctxs[name] = ctx
+                self._sessions[name] = sess
+                ready_evt.set()
+                await stop_evt.wait()
         finally:
             self._sessions.pop(name, None)
             self._ctxs.pop(name, None)

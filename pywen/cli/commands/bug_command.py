@@ -1,11 +1,14 @@
 """GitHub issue 报告命令实现"""
-import aiohttp
 import os
-import sys
 import platform
-from typing import Dict, Any
+import sys
+from typing import Any, Dict
+
+import aiohttp
 from rich import get_console
-from .base_command import BaseCommand, CommandResult, CommandAction
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class BugCommand(BaseCommand):
     def __init__(self):

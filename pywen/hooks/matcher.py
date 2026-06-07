@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 import re
 from typing import Optional
+
 
 def matches_tool(matcher: Optional[str], tool_name: str) -> bool:
     if matcher is None or matcher == "" or matcher == "*":

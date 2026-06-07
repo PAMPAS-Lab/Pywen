@@ -1,6 +1,7 @@
-from enum import Enum
-from typing import Set, Dict, Any, Optional
 from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Dict, Optional, Set
+
 
 class PermissionLevel(Enum):
     """Permission levels for tool execution."""
@@ -162,11 +163,7 @@ class PermissionManager:
         ]
         
         command_lower = command.lower()
-        for risk_cmd in high_risk_commands:
-            if risk_cmd in command_lower:
-                return False
-        
-        return True
+        return all(risk_cmd not in command_lower for risk_cmd in high_risk_commands)
     
     def get_permission_description(self) -> str:
         """Get description of current permission level."""

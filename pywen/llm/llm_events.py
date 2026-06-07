@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Generic, TypeVar, Literal
+from typing import Any, Dict, Generic, Literal, Optional, TypeVar
+
 
 class LLM_Events:
     REQUEST_STARTED       = "request.started"

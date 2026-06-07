@@ -3,8 +3,9 @@ Simple and efficient token counting utilities
 Based on Kode's lightweight approach
 """
 
-from typing import List, Dict, Any, Optional
-from .llm_basics import LLMMessage, LLMResponse
+from typing import Any, Dict, List
+
+from .llm_basics import LLMMessage
 
 
 def count_tokens_from_messages(messages: List[LLMMessage]) -> int:

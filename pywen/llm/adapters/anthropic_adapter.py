@@ -1,8 +1,12 @@
 from __future__ import annotations
-from typing import AsyncGenerator, Dict, Generator, List, Any, Optional
+
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional
+
 from anthropic import Anthropic, AsyncAnthropic
+
 from pywen.llm.llm_basics import LLMResponse
 from pywen.llm.llm_events import ResponseEvent
+
 
 def _to_anthropic_messages(messages: List[Dict[str, Any]]):
     """转换消息为 Anthropic 原生格式"""

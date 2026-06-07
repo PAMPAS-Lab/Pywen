@@ -1,11 +1,15 @@
 """关于命令实现"""
 
-from rich.panel import Panel
-from rich import get_console
-import sys
 import platform
-from .base_command import BaseCommand, CommandResult, CommandAction
+import sys
+
+from rich import get_console
+from rich.panel import Panel
+
 from pywen import get_version
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class AboutCommand(BaseCommand):
     def __init__(self):

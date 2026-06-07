@@ -1,11 +1,11 @@
 """
 测试 BashTool 的功能，包括交互式和非交互式场景
 """
-import asyncio
 import os
-import pytest
 import tempfile
 from pathlib import Path
+
+import pytest
 
 from pywen.tools.bash_tool import BashTool
 

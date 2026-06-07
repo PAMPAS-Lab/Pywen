@@ -1,11 +1,12 @@
 import logging
 import time
 import uuid
-from typing import Mapping, Any
-from pywen.llm.llm_basics import ToolCallResult, LLMMessage
+from typing import Any, Mapping
+
+from pywen.agents.agent_events import Agent_Events
+from pywen.llm.llm_basics import LLMMessage, ToolCallResult
 from pywen.tools.base_tool import BaseTool
 from pywen.tools.tool_manager import register_tool
-from pywen.agents.agent_events import Agent_Events
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ class TaskTool(BaseTool):
                     elif tool_name == "web_fetch" and "url" in tool_args:
                         result_parts.append(f"|_ 🌐 Fetching: {tool_args['url']}\n")
                     elif tool_name == "todo_write":
-                        result_parts.append(f"|_ ✅ Updating todo list\n")
+                        result_parts.append("|_ ✅ Updating todo list\n")
                     else:
                         result_parts.append(f"|_ 🔧 Using {tool_name} tool\n")
                     

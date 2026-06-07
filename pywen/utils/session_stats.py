@@ -1,6 +1,7 @@
-from datetime import datetime
-from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, Optional
+
 
 @dataclass
 class TokenStats:

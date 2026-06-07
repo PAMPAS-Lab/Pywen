@@ -18,12 +18,10 @@ from __future__ import annotations
 
 import json
 import re
-import sys
-from pathlib import Path
-from typing import List, Optional
+from typing import List
 
-from .loader import SkillParseError, _SEMVER_PATTERN, parse_skill_file
-from .models import SkillHealthReport, SkillMetadata, SkillScope
+from .loader import _SEMVER_PATTERN, SkillParseError, parse_skill_file
+from .models import SkillHealthReport, SkillMetadata
 
 # Pattern to extract script references from SKILL.md body text.
 # Matches paths like "scripts/setup.sh", "scripts/run.py", etc.
@@ -86,9 +84,8 @@ def check_skill_health(skill: SkillMetadata) -> SkillHealthReport:
             issues.append(f"scripts/: cannot read directory: {e}")
 
     # Check 4: version format
-    if skill.version:
-        if not _SEMVER_PATTERN.match(skill.version):
-            issues.append(f"version: invalid semver format '{skill.version}'")
+    if skill.version and not _SEMVER_PATTERN.match(skill.version):
+        issues.append(f"version: invalid semver format '{skill.version}'")
 
     return SkillHealthReport(
         skill_name=skill.name,

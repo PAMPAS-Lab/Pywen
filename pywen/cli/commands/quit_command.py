@@ -1,11 +1,14 @@
 """Quit command implementation."""
 
-from typing import Dict, Any
-from rich.panel import Panel
+from typing import Any, Dict
+
 from rich import get_console
 from rich.align import Align
-from .base_command import BaseCommand, CommandResult, CommandAction
+from rich.panel import Panel
+
 from pywen.utils.session_stats import session_stats
+
+from .base_command import BaseCommand, CommandAction, CommandResult
 
 
 class QuitCommand(BaseCommand):

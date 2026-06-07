@@ -1,10 +1,13 @@
 import asyncio
-import aiohttp
 import os
-from typing import Dict, Any, List, Optional,Mapping
 from dataclasses import dataclass
-from .base_tool import BaseTool, ToolCallResult
+from typing import Any, Dict, List, Mapping, Optional
+
+import aiohttp
+
 from pywen.tools.tool_manager import register_tool
+
+from .base_tool import BaseTool, ToolCallResult
 
 CLAUDE_DESCRIPTION = """
 - Allows Claude to search the web and use the results to inform responses
@@ -115,22 +118,21 @@ class WebSearchTool(BaseTool):
                 "hl": "en"
             }
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.base_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=30)
-                ) as response:
-                    
-                    if response.status != 200:
-                        error_text = await response.text()
-                        return ToolCallResult(
-                            call_id=kwargs.get("call_id", ""),
-                            error=f"Serper API error {response.status}: {error_text}"
-                        )
-                    
-                    data = await response.json()
+            async with aiohttp.ClientSession() as session, session.post(
+                self.base_url,
+                headers=headers,
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                
+                if response.status != 200:
+                    error_text = await response.text()
+                    return ToolCallResult(
+                        call_id=kwargs.get("call_id", ""),
+                        error=f"Serper API error {response.status}: {error_text}"
+                    )
+                
+                data = await response.json()
             
             search_results = self._parse_search_results(data)
             

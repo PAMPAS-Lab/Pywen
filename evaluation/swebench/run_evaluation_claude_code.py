@@ -1,19 +1,18 @@
+import argparse
+import contextlib
 import os
 import shutil
-import argparse
 import traceback
-
-from typing import Any, Callable, cast
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, cast
 
-from docker import from_env, DockerClient
-from docker.errors import ImageNotFound, APIError, NotFound
-from docker.models.containers import Container, ExecResult
 from datasets import load_dataset
+from docker import DockerClient, from_env
+from docker.errors import APIError, ImageNotFound, NotFound
+from docker.models.containers import Container, ExecResult
 from tqdm import tqdm
-
 
 AGENT_IMAGE = "pywen/claude-code-agent:0.1"
 AGENT_IMAGE_DOCKERFILE = "Dockerfile.claude-code-agent"
@@ -121,14 +120,10 @@ class DockerOps:
     def stop_and_remove(self, container: Container | None) -> None:
         if container is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             container.stop(timeout=5)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
+        with contextlib.suppress(Exception):
             container.remove()
-        except Exception:  # noqa: BLE001
-            pass
 
     def cp_from_container(self, container: Container, src_path: str, dst: Path) -> None:
         """ 将容器内路径内容复制到宿主目录。dst 若不存在会创建。 """
@@ -318,11 +313,8 @@ class ClaudeCodeBenchmarkEvaluation:
                     # 初始化 ~/.claude 目录（在容器里跑一次 claude --version 来生成）
                     self.ops.exec_sh(container, "/usr/local/share/npm-global/bin/claude --version", check=False)
                     target_claude_home.mkdir(parents=True, exist_ok=True)
-                    try:
+                    with contextlib.suppress(RuntimeError):
                         self.ops.cp_from_container(container, "/root/.claude", target_claude_home)
-                    except RuntimeError:
-                        # 如果 ~/.claude 不存在，创建空目录即可
-                        pass
             finally:
                 self.ops.stop_and_remove(container)
         else:
@@ -380,9 +372,7 @@ class ClaudeCodeBenchmarkEvaluation:
 
         if patch_path.exists() and patch_path.stat().st_size > 0:
             return True
-        if log_path.exists() and log_path.stat().st_size > 0:
-            return True
-        return False
+        return bool(log_path.exists() and log_path.stat().st_size > 0)
 
     def run_one_instance(self, instance_id: str) -> None:
         if self.skip_completed and self._is_instance_completed(instance_id):

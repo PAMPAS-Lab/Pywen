@@ -1,23 +1,27 @@
 from __future__ import annotations
+
 import asyncio
 import threading
-from typing import Callable, Optional
 from enum import Enum
+from typing import Callable, Optional
+
 from prompt_toolkit import PromptSession
-from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.history import InMemoryHistory
+
 from pywen.agents.agent_events import Agent_Events
 from pywen.agents.agent_manager import AgentManager
-from pywen.cli.command_processor import CommandProcessor
 from pywen.cli.cli_console import CLIConsole
+from pywen.cli.command_processor import CommandProcessor
 from pywen.cli.commands.base_command import CommandAction, CommandResult
 from pywen.config.manager import ConfigManager
-from pywen.utils.key_binding import create_key_bindings
-from pywen.llm.llm_basics import LLMMessage
-from pywen.tools.tool_manager import ToolManager
 from pywen.hooks.models import HookEvent
-from pywen.utils.permission_manager import PermissionLevel, PermissionManager
+from pywen.llm.llm_basics import LLMMessage
 from pywen.memory.memory_monitor import MemoryMonitor
+from pywen.tools.tool_manager import ToolManager
+from pywen.utils.key_binding import create_key_bindings
+from pywen.utils.permission_manager import PermissionLevel, PermissionManager
+
 
 class RunEndType(str, Enum):
     COMPLETED = "completed"

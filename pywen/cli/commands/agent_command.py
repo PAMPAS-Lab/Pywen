@@ -1,9 +1,12 @@
 """Agent切换命令实现"""
-from typing import Dict, Any
-from pywen.cli.cli_console import CLIConsole 
+from typing import Any, Dict
+
 from pywen.agents.agent_manager import AgentManager
+from pywen.cli.cli_console import CLIConsole
 from pywen.config.manager import ConfigManager
-from .base_command import BaseCommand, CommandResult, CommandAction
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class AgentCommand(BaseCommand):
     def __init__(self):

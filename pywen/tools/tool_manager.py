@@ -1,12 +1,16 @@
 from __future__ import annotations
-import importlib, pkgutil
+
+import importlib
+import pkgutil
 from dataclasses import dataclass
-from typing import Dict, Iterable, Set, Type, Optional, List, Any, Tuple
-from pywen.tools.base_tool import BaseTool, ToolRiskLevel
-from pywen.utils.permission_manager import PermissionManager 
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Type
+
+from pywen.cli.cli_console import CLIConsole
 from pywen.hooks.manager import HookManager
 from pywen.hooks.models import HookEvent
-from pywen.cli.cli_console import CLIConsole
+from pywen.tools.base_tool import BaseTool, ToolRiskLevel
+from pywen.utils.permission_manager import PermissionManager
+
 
 @dataclass
 class ToolEntry:

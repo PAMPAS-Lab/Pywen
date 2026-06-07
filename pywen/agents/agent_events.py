@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional, Generic, TypeVar
+from typing import Any, Dict, Generic, Literal, Optional, TypeVar
+
 
 class Agent_Events:
     USER_MESSAGE         = "user.message"

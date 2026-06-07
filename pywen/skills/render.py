@@ -5,6 +5,7 @@ When a query is provided and the skill count exceeds top_k, only the
 most relevant skills are included in the output.
 """
 from __future__ import annotations
+
 from typing import List, Optional
 
 from .models import SkillMetadata

@@ -1,7 +1,9 @@
 """占位符命令实现 - 待完善的命令"""
 
 from rich import get_console
-from .base_command import BaseCommand, CommandResult, CommandAction
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class PlaceholderCommand(BaseCommand):
     """通用占位符命令"""

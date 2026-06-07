@@ -1,11 +1,13 @@
 # manager.py
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from .models import HookEvent, HooksConfig
 from .matcher import matches_tool
-from .runner import run_command_hook, run_command_hook_async
+from .models import HookEvent, HooksConfig
+from .runner import run_command_hook_async
+
 
 class HookManager:
     def __init__(self, config: HooksConfig):
@@ -39,9 +41,11 @@ class HookManager:
         payload.update({k: v for k, v in base_payload.items() if k not in payload})
 
         for group in groups:
-            if event in (HookEvent.PreToolUse, HookEvent.PostToolUse):
-                if not tool_name or not matches_tool(group.matcher, tool_name):
-                    continue
+            if (
+                event in (HookEvent.PreToolUse, HookEvent.PostToolUse)
+                and (not tool_name or not matches_tool(group.matcher, tool_name))
+            ):
+                continue
 
             for cmd in group.hooks:
                 res = await run_command_hook_async(
@@ -111,4 +115,3 @@ class HookManager:
                     return continue_ok, user_msg, extra
 
         return continue_ok, user_msg, extra
-

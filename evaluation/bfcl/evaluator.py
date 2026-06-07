@@ -2,10 +2,10 @@ import ast
 import json
 import re
 import time
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Protocol
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Protocol
 
 from .dataset import BFCLDataset, BFCLSample
 
@@ -98,7 +98,7 @@ class BFCLEvaluator:
                     if self._compare_ast(output_clean, exp_clean):
                         return True
             return False
-        except:
+        except Exception:
             return False
 
     def _parse_function_call(self, call_str: str) -> Optional[Dict[str, Any]]:
@@ -119,7 +119,7 @@ class BFCLEvaluator:
                     if kw.arg:
                         args[kw.arg] = ast.literal_eval(ast.unparse(kw.value))
             return {"name": func_name, "arguments": args}
-        except:
+        except Exception:
             return None
 
     def _match_bfcl_format(self, parsed: Dict[str, Any], expected: Dict[str, Any]) -> bool:
@@ -161,7 +161,7 @@ class BFCLEvaluator:
                     args = json.loads(args)
                 args_str = ", ".join(f"{k}={repr(v)}" for k, v in args.items())
                 return f"{name}({args_str})"
-            except:
+            except Exception:
                 pass
         for prefix in ["Output:", "Answer:", "Result:"]:
             if text.startswith(prefix):
@@ -173,15 +173,12 @@ class BFCLEvaluator:
             out_ast = ast.parse(output, mode='eval')
             exp_ast = ast.parse(expected, mode='eval')
             return ast.dump(out_ast) == ast.dump(exp_ast)
-        except:
+        except Exception:
             return output.strip() == expected.strip()
 
     def _exact_match(self, output: str, expected: List[str]) -> bool:
         output_clean = output.strip().lower()
-        for exp in expected:
-            if output_clean == exp.strip().lower():
-                return True
-        return False
+        return any(output_clean == exp.strip().lower() for exp in expected)
 
     def _compute_category_metrics(self, results: List[EvaluationResult]) -> Dict[str, Dict[str, Any]]:
         metrics: Dict[str, Dict[str, Any]] = {}
@@ -218,4 +215,3 @@ class BFCLEvaluator:
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(bfcl_results, f, ensure_ascii=False, indent=2)
         print(f"📄 BFCL格式结果已保存: {output_path}")
-

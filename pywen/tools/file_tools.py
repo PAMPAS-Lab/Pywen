@@ -1,8 +1,10 @@
 import os
 from typing import Any, Mapping
+
 from pywen.cli.highlighted_content import HighlightedContentDisplay
-from .base_tool import BaseTool, ToolCallResult, ToolRiskLevel
 from pywen.tools.tool_manager import register_tool
+
+from .base_tool import BaseTool, ToolCallResult, ToolRiskLevel
 
 CLAUDE_DESCRIPTION_WRITE = """
 Writes a file to the local filesystem.
@@ -129,7 +131,7 @@ class WriteFileTool(BaseTool):
                 try:
                     with open(path, "r", encoding="utf-8") as f:
                         old_content = f.read()
-                except:
+                except Exception:
                     old_content = ""
 
             directory = os.path.dirname(path)

@@ -1,8 +1,12 @@
 """Model切换命令实现"""
-from typing import Dict, Any
+from typing import Any, Dict
+
 from rich import get_console
-from .base_command import BaseCommand, CommandResult, CommandAction
+
 from pywen.config.manager import ConfigManager
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class ModelCommand(BaseCommand):
     def __init__(self):
@@ -54,7 +58,7 @@ class ModelCommand(BaseCommand):
             provider = model.get("provider", "N/A")
             status = "[green]✓ Current[/green]" if agent_name == default_agent else ""
             self.console.print(f"  • [cyan]{agent_name}[/cyan] ({provider}): {model_name} {status}")
-        self.console.print(f"\n[dim]Usage: /agent <agent_name> to switch[/dim]")
+        self.console.print("\n[dim]Usage: /agent <agent_name> to switch[/dim]")
     
     async def _switch_model(self, context: Dict[str, Any], new_provider: str):
         """提醒用户使用 /agent 命令切换模型"""

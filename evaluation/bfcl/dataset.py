@@ -1,9 +1,9 @@
 import json
-import subprocess
 import shutil
-from pathlib import Path
-from typing import Any, Dict, List, Optional, Iterator
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Optional
 
 BFCL_REPO_URL = "https://github.com/ShishirPatil/gorilla.git"
 BFCL_DATA_SUBDIR = "berkeley-function-call-leaderboard/bfcl_eval/data"
@@ -84,7 +84,7 @@ class BFCLDataset:
         repo_dir = self.base_dir / "gorilla"
         if repo_dir.exists() and (repo_dir / BFCL_DATA_SUBDIR).exists():
             return True
-        print(f"📥 正在克隆BFCL仓库 (sparse checkout, 仅下载数据目录)...")
+        print("📥 正在克隆BFCL仓库 (sparse checkout, 仅下载数据目录)...")
         try:
             if repo_dir.exists():
                 shutil.rmtree(repo_dir)

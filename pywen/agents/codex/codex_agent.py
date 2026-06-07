@@ -1,17 +1,20 @@
-import json,os
 import inspect
+import json
+import os
 from pathlib import Path
-from typing import Dict, List, Mapping, Literal, Any, AsyncGenerator
-from typing_extensions import override
+from typing import Any, AsyncGenerator, Dict, List, Literal, Mapping
+
 from pydantic import BaseModel
+from typing_extensions import override
+
+from pywen.agents.agent_events import AgentEvent
 from pywen.agents.base_agent import BaseAgent
-from pywen.agents.agent_events import AgentEvent 
-from pywen.llm.llm_basics import ToolCall, LLMMessage
-from pywen.llm.llm_events import LLM_Events 
-from pywen.config.token_limits import TokenLimits 
-from pywen.utils.session_stats import session_stats
-from pywen.tools.tool_manager import ToolManager
+from pywen.config.token_limits import TokenLimits
+from pywen.llm.llm_basics import LLMMessage, ToolCall
+from pywen.llm.llm_events import LLM_Events
 from pywen.memory.memory_monitor import MemoryMonitor
+from pywen.tools.tool_manager import ToolManager
+from pywen.utils.session_stats import session_stats
 
 MessageRole = Literal["system", "developer", "user", "assistant"]
 HistoryItem = Dict[str, Any]
@@ -247,7 +250,8 @@ class CodexAgent(BaseAgent):
                 yield AgentEvent.text_delta(str(event.data))
     
             elif event.type == LLM_Events.TOOL_CALL_READY:
-                if event.data is None: continue
+                if event.data is None:
+                    continue
                 item = event.data
                 self.history.add_item(item)
                 if item.type == "function_call" or item.type == "function":
@@ -309,4 +313,3 @@ class CodexAgent(BaseAgent):
             self.history.add_item(item)
             error_msg = f"Tool execution failed: {str(e)}"
             yield AgentEvent.tool_result(call_id, name, error_msg, False, arguments)
-

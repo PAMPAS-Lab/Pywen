@@ -1,5 +1,6 @@
 import asyncio
 import atexit
+import contextlib
 import locale
 import os
 import re
@@ -7,8 +8,10 @@ import shlex
 import signal
 import tempfile
 from typing import Any, Mapping, Optional, Set, Tuple
-from .base_tool import BaseTool, ToolCallResult, ToolRiskLevel
+
 from pywen.tools.tool_manager import register_tool
+
+from .base_tool import BaseTool, ToolCallResult, ToolRiskLevel
 
 # 配置常量
 MAX_OUTPUT_LENGTH = 30000
@@ -77,10 +80,8 @@ def _cleanup_all_processes():
                     os.killpg(pid, signal.SIGTERM)
                 except ProcessLookupError:
                     # 进程组不存在，尝试终止单个进程
-                    try:
+                    with contextlib.suppress(ProcessLookupError):
                         os.kill(pid, signal.SIGTERM)
-                    except ProcessLookupError:
-                        pass
         except (ProcessLookupError, PermissionError, OSError):
             pass
     _tracked_pids.clear()
@@ -188,7 +189,7 @@ class BashTool(BaseTool):
         command = kwargs.get("command", "")
         risk_level = self.get_risk_level(**kwargs)
 
-        message = f"🔧 Execute bash command:\n"
+        message = "🔧 Execute bash command:\n"
         message += f"Command: {command}\n"
         message += f"Risk Level: {risk_level.value.upper()}\n"
 
@@ -273,10 +274,8 @@ class BashTool(BaseTool):
             return await self._execute_foreground(shell_command, cwd, timeout)
         finally:
             if temp_script and os.path.exists(temp_script):
-                try:
+                with contextlib.suppress(Exception):
                     os.unlink(temp_script)
-                except Exception:
-                    pass
 
     async def _execute_foreground(
         self,

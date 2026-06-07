@@ -1,7 +1,10 @@
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple, Mapping
-from .base_tool import BaseTool, ToolCallResult 
+from typing import Any, Dict, List, Mapping, Optional, Tuple
+
 from pywen.tools.tool_manager import register_tool
+
+from .base_tool import BaseTool, ToolCallResult
+
 
 class PlanItemStatus(str, Enum):
     TODO = "todo"
@@ -42,7 +45,7 @@ def _render_markdown(explanation: Optional[str], items: List[Dict[str, Any]]) ->
         "blocked": "⛔",
         "skipped": "⤴️",
     }
-    for i, it in enumerate(items, 1):
+    for _i, it in enumerate(items, 1):
         s = it["status"]
         em = status_emoji.get(s, "•")
         lines.append(f"- {em} **{it['step']}**  _({s})_")

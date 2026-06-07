@@ -1,10 +1,15 @@
 from __future__ import annotations
-import os,json
-from typing import AsyncGenerator, Dict, Generator, List, Any, Optional, cast
-from openai import OpenAI, AsyncOpenAI
+
+import json
+import os
+from typing import Any, AsyncGenerator, Dict, Generator, List, Optional, cast
+
+from openai import AsyncOpenAI, OpenAI
 from openai.types.chat import ChatCompletionMessageParam
+
 from pywen.llm.llm_basics import LLMResponse
 from pywen.llm.llm_events import ResponseEvent
+
 
 def _to_chat_messages(messages: List[Dict[str, Any]]) -> List[ChatCompletionMessageParam]:
     converted: List[ChatCompletionMessageParam] = []
@@ -168,7 +173,7 @@ class OpenAIAdapter():
                 for tc in tool_calls.values():
                     try:
                         tc["arguments"] = json.loads(tc["arguments"])
-                    except:
+                    except Exception:
                         tc["arguments"] = {}
                 payload["tool_calls"] = list(tool_calls.values())
                 yield ResponseEvent.tool_call_ready(list(tool_calls.values()))

@@ -1,20 +1,20 @@
-from typing import Dict, Any, List, AsyncGenerator, Optional
-from pywen.agents.base_agent import BaseAgent
-from pywen.llm.llm_basics import LLMMessage, LLMResponse
-from pywen.llm.llm_basics import ToolCallResult
-from pywen.llm.llm_client import LLMClient
-from pywen.hooks.manager import HookManager
-from pywen.agents.research.research_prompts import (
-    get_current_date,
-    query_writer_instructions,
-    web_search_executor_instructions,
-    web_fetch_executor_instructions,
-    summary_generator_instructions,
-    reflection_instructions,
-    answer_instructions
-)
 import json
 import re
+from typing import Any, AsyncGenerator, Dict, List, Optional
+
+from pywen.agents.base_agent import BaseAgent
+from pywen.agents.research.research_prompts import (
+    answer_instructions,
+    get_current_date,
+    query_writer_instructions,
+    reflection_instructions,
+    summary_generator_instructions,
+    web_fetch_executor_instructions,
+    web_search_executor_instructions,
+)
+from pywen.hooks.manager import HookManager
+from pywen.llm.llm_basics import LLMMessage, LLMResponse, ToolCallResult
+from pywen.llm.llm_client import LLMClient
 
 
 def _extract_json(content: str) -> str:
@@ -85,7 +85,7 @@ Follow the research process step by step and use the appropriate prompts for eac
         queries_text = "\n".join([f"- {query}" for query in queries])
         return web_fetch_executor_instructions.format(
             current_date=get_current_date(),
-            web_search_results="\n".join([result for result in web_search_results]),
+            web_search_results="\n".join(list(web_search_results)),
             research_topic=queries_text
         )
     def _get_summary_generator_prompt(self, topic: str, search_results: Optional[List[Any]] = None) -> str:

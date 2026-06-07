@@ -9,26 +9,22 @@ Acceptance criteria:
 6. Frontmatter custom fields with HIGH-risk content → SkillParseError
 """
 from __future__ import annotations
-import sys
+
+import re
 import textwrap
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from pywen.skills.loader import parse_skill_file, SkillParseError, SKILLS_FILENAME
+from pywen.skills.loader import SKILLS_FILENAME, SkillParseError, parse_skill_file
 from pywen.skills.models import SkillScope
 from pywen.skills.security import (
-    configure_trusted_paths,
-    scan_skill_content,
     SECURITY_RULES,
     RiskLevel,
     SecurityRule,
+    configure_trusted_paths,
+    scan_skill_content,
 )
-import re
 
 
 def _write_skill(

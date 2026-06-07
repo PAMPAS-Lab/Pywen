@@ -1,5 +1,6 @@
 from pywen.tools.tool_manager import ToolManager
 
+
 def test_tools_autodiscover():
     ToolManager.autodiscover()
 

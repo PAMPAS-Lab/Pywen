@@ -1,18 +1,25 @@
 """CLI Console for displaying agent progress."""
 from __future__ import annotations
+
 import os
-from typing import Optional, Any, Dict, Union
-from rich import get_console
-from rich.console import Group,RenderableType
-from rich.panel import Panel
-from rich.text import Text
-from rich.syntax import Syntax
+from typing import Any, Dict, Optional, Union
+
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
+from rich import get_console
+from rich.console import Group, RenderableType
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.text import Text
+
+from pywen.agents.agent_events import Agent_Events, AgentEvent
+from pywen.cli.highlighted_content import (
+    HighlightedContentDisplay,
+    create_enhanced_tool_result_display,
+)
 from pywen.tools.base_tool import ToolRiskLevel
 from pywen.utils.permission_manager import PermissionLevel, PermissionManager
-from pywen.cli.highlighted_content import create_enhanced_tool_result_display, HighlightedContentDisplay
-from pywen.agents.agent_events import Agent_Events, AgentEvent
+
 
 class CLIConsole:
     """Console for displaying agent progress and handling user interactions."""
@@ -344,7 +351,7 @@ class UnifiedToolCallResultRenderer:
                 content = Group(content, notice)
 
         path = arguments.get("file_path") or arguments.get("path") or ""
-        title = f"✓ read_file"
+        title = "✓ read_file"
         if path:
             short = ("..." + path[-47:]) if len(path) > 50 else path
             title = f"✓ read_file: {short}"
@@ -549,10 +556,10 @@ class EventRouter:
                 self.p.print_text(f"🎯 Next: {data['next_action'][:100]}...", "dim")
             self.p.print_raw("")
         elif event.type == Agent_Events.TASK_COMPLETE:
-            self.p.print_text(f"\n✅ Task completed!", "green", True)
+            self.p.print_text("\n✅ Task completed!", "green", True)
             self.p.print_raw("")
         elif event.type == Agent_Events.TURN_MAX_REACHED:
-            self.p.print_text(f"⚠️ Maximum turns reached", "yellow", True)
+            self.p.print_text("⚠️ Maximum turns reached", "yellow", True)
             self.p.print_raw("")
         elif event.type == Agent_Events.ERROR:
             # 兼容不同错误载荷：优先 message，其次 error，最后整体转字符串

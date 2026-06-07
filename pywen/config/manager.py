@@ -1,14 +1,20 @@
 from __future__ import annotations
-import os,sys
-import yaml
-import stat
-import shutil
+
+import contextlib
 import importlib.resources as pkgres
+import os
+import shutil
+import stat
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
-from .config import AppConfig, AgentConfig, ModelConfig
+
+import yaml
+
 from pywen.skills import SkillsManager, render_skills_section
+
+from .config import AgentConfig, AppConfig, ModelConfig
 
 PLACEHOLDERS = {
     "your-qwen-api-key-here",
@@ -299,10 +305,7 @@ class ConfigManager:
     @staticmethod
     def _build_model_from_agent_fields(ag: Dict[str, Any]) -> Dict[str, Any]:
         m = ag.get("model")
-        if isinstance(m, dict):
-            model_obj = dict(m)
-        else:
-            model_obj = {"model_name": (m or "")}
+        model_obj = dict(m) if isinstance(m, dict) else {"model_name": m or ""}
         if "api_key" in ag and "api_key" not in model_obj:
             model_obj["api_key"] = ag["api_key"]
         if "base_url" in ag and "base_url" not in model_obj:
@@ -503,10 +506,8 @@ class ConfigManager:
 
     def _chmod_private(self, path: Path) -> None:
         """在 *nix 上将权限收紧到 0o600；Windows 忽略。"""
-        try:
+        with contextlib.suppress(Exception):
             os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-        except Exception:
-            pass
 
     def _print_copy_hint(self, example_src: Path, target: Path) -> None:
         """在交互终端输出一次拷贝提示与需要修改的关键字段。"""

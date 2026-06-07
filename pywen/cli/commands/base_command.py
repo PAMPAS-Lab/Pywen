@@ -2,7 +2,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 
 class CommandAction(str, Enum):
     FORWARD = "forward"   # 不处理，交给 agent 原始输入

@@ -1,17 +1,21 @@
 from __future__ import annotations
+
 import asyncio
+import contextlib
 import threading
-from typing import Optional, List, AsyncGenerator 
-from pywen.config.manager import ConfigManager
-from pywen.tools.tool_manager import ToolManager 
+from typing import AsyncGenerator, List, Optional
+
 from pywen.cli.cli_console import CLIConsole
+from pywen.config.manager import ConfigManager
 from pywen.memory.memory_monitor import MemoryMonitor
+from pywen.tools.tool_manager import ToolManager
 
 from .agent_events import AgentEvent
 from .base_agent import BaseAgent
-from .pywen.pywen_agent import PywenAgent
 from .claude.claude_agent import ClaudeAgent
 from .codex.codex_agent import CodexAgent
+from .pywen.pywen_agent import PywenAgent
+
 
 class ExecutionState:
     """进程内的执行状态（支持取消）"""
@@ -128,10 +132,8 @@ class AgentManager:
     async def _safe_close(self, agent: Optional[BaseAgent]) -> None:
         if not agent:
             return
-        try:
+        with contextlib.suppress(Exception):
             await agent.aclose()
-        except Exception:
-            pass
 
     async def _create_agent(self, normalized_name: str) -> BaseAgent:
         if normalized_name == "pywen":

@@ -1,9 +1,12 @@
 import asyncio
 from asyncio import TimerHandle
-from typing import Callable, Optional, Dict, Any
+from typing import Any, Callable, Dict, Optional
+
 from prompt_toolkit.key_binding import KeyBindings
+
 from pywen.cli.cli_console import CLIConsole
-from pywen.utils.permission_manager import PermissionLevel,PermissionManager
+from pywen.utils.permission_manager import PermissionLevel, PermissionManager
+
 
 def create_key_bindings(
     console_getter: Callable[[], CLIConsole], 

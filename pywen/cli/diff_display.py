@@ -3,9 +3,11 @@ Diff display utilities for showing file changes in a user-friendly format.
 """
 import difflib
 from typing import List
-from rich.panel import Panel
+
 from rich.columns import Columns
+from rich.panel import Panel
 from rich.text import Text
+
 
 class DiffDisplay:
     """Utility class for displaying file diffs in various formats."""
@@ -24,7 +26,7 @@ class DiffDisplay:
         new_lines = new_content.splitlines(keepends=False)
         
         # Generate unified diff to understand changes
-        diff = list(difflib.unified_diff(
+        list(difflib.unified_diff(
             old_lines, new_lines, 
             fromfile=old_label, tofile=new_label,
             n=context_lines, lineterm=""

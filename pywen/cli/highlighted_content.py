@@ -3,9 +3,11 @@ Highlighted content display for showing file changes with +/- indicators.
 """
 import difflib
 from typing import List, Optional
+
 from rich.panel import Panel
-from rich.text import Text
 from rich.table import Table
+from rich.text import Text
+
 
 class HighlightedContentDisplay:
     """Display file content with highlighted changes."""
@@ -50,7 +52,7 @@ class HighlightedContentDisplay:
         """Create a panel showing file content with +/- indicators for changes."""
 
         lines = content.splitlines()
-        language = HighlightedContentDisplay.get_language_from_path(file_path)
+        HighlightedContentDisplay.get_language_from_path(file_path)
 
         # If content is too long, show first part with truncation notice
         display_lines = lines[:max_lines]
@@ -125,7 +127,6 @@ class HighlightedContentDisplay:
 
         # Convert unified diff to our display format
         content_text = Text()
-        line_num = 0
         old_line_num = 0
         new_line_num = 0
 

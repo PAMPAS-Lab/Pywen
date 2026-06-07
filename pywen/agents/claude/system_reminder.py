@@ -5,12 +5,12 @@ Implements dynamic reminder injection based on context state
 Based on Kode's SystemReminder implementation with Python adaptations
 """
 
-import time
-import json
 import hashlib
-from typing import Dict, List, Optional, Any, Set
+import json
+import time
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Dict, List, Optional, Set
 
 
 class ReminderPriority(Enum):
@@ -149,7 +149,7 @@ NEVER proactively create documentation files (*.md) or README files. Only create
             return []
             
         reminders: List[ReminderMessage] = []
-        current_time = time.time()
+        time.time()
         
         # 检查待办提醒（包括空待办和更新待办）
         todo_reminder = self._dispatch_todo_event(agent_id, todo_items)
@@ -499,7 +499,6 @@ def emit_tool_execution_event(tool_call, agent_type: str, todo_items: List[Dict]
     Returns:
         如果是 todo_write 工具，返回新的 todo_items，否则返回 None
     """
-    from pywen.llm.llm_basics import ToolCall
     current_time = time.time()
     
     # 文件读取事件

@@ -1,5 +1,6 @@
 from typing import Any, Tuple
 
+
 class Middleware:
     async def before_prompt_submit(self, prompt: str) -> Tuple[bool, str | None, dict]:
         return True, None, {}
@@ -19,8 +20,10 @@ class MiddlewareChain:
         for mw in self._mws:
             if hasattr(mw, "before_prompt_submit"):
                 ok, msg, extra = await mw.before_prompt_submit(prompt)
-                if extra: merged.update(extra)
-                if not ok: return ok, msg, merged
+                if extra:
+                    merged.update(extra)
+                if not ok:
+                    return ok, msg, merged
         return True, None, merged
 
     async def on_event(self, event: dict, agent: Any) -> bool:
@@ -40,4 +43,3 @@ class MiddlewareChain:
         for mw in self._mws:
             if hasattr(mw, "on_turn_stop"):
                 await mw.on_turn_stop(result, event, agent, user_input)
-

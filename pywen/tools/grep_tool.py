@@ -1,8 +1,10 @@
 import os
 import re
 from typing import Any, Mapping, Pattern
-from .base_tool import BaseTool, ToolCallResult
+
 from pywen.tools.tool_manager import register_tool
+
+from .base_tool import BaseTool, ToolCallResult
 
 CLAUDE_DESCRIPTION = """
 A powerful search tool built on ripgrep
@@ -79,7 +81,7 @@ class GrepTool(BaseTool):
                 results.extend(matches)
             elif os.path.isdir(path):
                 if recursive:
-                    for root, dirs, files in os.walk(path):
+                    for root, _dirs, files in os.walk(path):
                         for file in files:
                             file_path = os.path.join(root, file)
                             matches = self._search_in_file(

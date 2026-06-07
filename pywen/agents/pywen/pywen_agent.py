@@ -1,25 +1,30 @@
 """Pywen Agent implementation with streaming logic."""
-import os,subprocess, json
-import platform, shutil
+import json
+import os
+import platform
+import shutil
+import subprocess
 from pathlib import Path
-from typing import Dict, List, Any, AsyncGenerator,Mapping
+from typing import Any, AsyncGenerator, Dict, List, Mapping
+
+from pywen.agents.agent_events import AgentEvent
 from pywen.agents.base_agent import BaseAgent
-from pywen.agents.agent_events import AgentEvent 
-from pywen.llm.llm_basics import LLMMessage
-from pywen.llm.llm_events import LLM_Events
 from pywen.config.token_limits import TokenLimits
+from pywen.llm.llm_basics import LLMMessage, LLMResponse, ToolCall
+from pywen.llm.llm_events import LLM_Events
 from pywen.utils.session_stats import session_stats
-from pywen.llm.llm_basics import LLMResponse, ToolCall
+
 from .prompts import (
+    BASE_PROMPT_DEFAULT,
+    GIT_INFO_BLOCK,
     RUNTIME_ENV_LINUX_PROMPT,
     RUNTIME_ENV_MACOS_PROMPT,
     RUNTIME_ENV_WINDOWS_PROMPT,
-    BASE_PROMPT_DEFAULT,
-    SANDBOX_MACOS_SEATBELT_PROMPT,
     SANBOX_DEFAULT,
     SANBOX_OUTSIDE,
-    GIT_INFO_BLOCK,
+    SANDBOX_MACOS_SEATBELT_PROMPT,
 )
+
 
 class PywenAgent(BaseAgent):
     """Pywen Agent with streaming iterative tool calling logic."""

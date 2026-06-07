@@ -1,7 +1,10 @@
 from pathlib import Path
 from typing import Any, Mapping
-from .base_tool import BaseTool, ToolCallResult
+
 from pywen.tools.tool_manager import register_tool
+
+from .base_tool import BaseTool, ToolCallResult
+
 
 @register_tool(name="memory", providers=["pywen"])
 class MemoryTool(BaseTool):
@@ -55,7 +58,7 @@ class MemoryTool(BaseTool):
             with open(full_path, 'r', encoding='utf-8') as f:
                 return f.read()
         except Exception as e:
-            raise Exception(f"Failed to read memory file: {str(e)}")
+            raise Exception(f"Failed to read memory file: {str(e)}") from e
 
     def _write_memory_file(self, file_path: str, content: str) -> None:
         """Write content to a memory file."""
@@ -68,7 +71,7 @@ class MemoryTool(BaseTool):
             with open(full_path, 'w', encoding='utf-8') as f:
                 f.write(content)
         except Exception as e:
-            raise Exception(f"Failed to write memory file: {str(e)}")
+            raise Exception(f"Failed to write memory file: {str(e)}") from e
 
     def _list_memory_files(self) -> str:
         """List all memory files in the directory."""

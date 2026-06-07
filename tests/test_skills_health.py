@@ -10,26 +10,21 @@ Acceptance criteria:
 7. Pre-release version strings are accepted as valid
 """
 from __future__ import annotations
+
 import json
-import sys
 import textwrap
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from pywen.skills.loader import parse_skill_file, SKILLS_FILENAME
-from pywen.skills.models import SkillMetadata, SkillScope
 from pywen.skills.health import (
-    check_skill_health,
     check_all_skills_health,
-    run_health_check_cli,
+    check_skill_health,
     format_health_report_json,
-    format_health_report_text,
+    run_health_check_cli,
 )
+from pywen.skills.loader import SKILLS_FILENAME, parse_skill_file
+from pywen.skills.models import SkillMetadata, SkillScope
 
 
 def _write_good_skill(tmp_path: Path, name: str) -> SkillMetadata:

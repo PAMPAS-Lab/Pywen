@@ -9,22 +9,18 @@ Acceptance criteria:
 6. Failed injection produces skill_inject_failed event
 """
 from __future__ import annotations
+
 import json
 import logging
-import sys
 import textwrap
 from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from pywen.skills.loader import parse_skill_file, SKILLS_FILENAME, SkillParseError
-from pywen.skills.models import SkillScope, SkillLoadOutcome, UserInput
-from pywen.skills.injection import build_skill_injections
 from pywen.skills.audit import AuditEventType
+from pywen.skills.injection import build_skill_injections
+from pywen.skills.loader import SKILLS_FILENAME, SkillParseError, parse_skill_file
+from pywen.skills.models import SkillLoadOutcome, SkillScope, UserInput
 
 
 def _write_skill(tmp_path: Path, name: str, description: str) -> Path:

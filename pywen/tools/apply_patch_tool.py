@@ -1,12 +1,15 @@
 from __future__ import annotations
-import os
+
 import json
-from dataclasses import dataclass 
+import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Mapping 
+from typing import Any, Dict, List, Mapping, Optional, Tuple
+
 from typing_extensions import override
-from pywen.tools.base_tool import BaseTool, ToolRiskLevel
+
 from pywen.llm.llm_basics import ToolCallResult
+from pywen.tools.base_tool import BaseTool, ToolRiskLevel
 from pywen.tools.tool_manager import register_tool
 
 BEGIN_PATCH_MARKER = "*** Begin Patch"
@@ -183,7 +186,7 @@ class ApplyPatchArgs:
     workdir: Optional[str]
 
 def parse_patch(patch: str, allow_heredoc: bool = False) -> ApplyPatchArgs:
-    lines = [ln for ln in patch.strip().splitlines()]
+    lines = list(patch.strip().splitlines())
 
     try:
         _check_patch_boundaries_strict(lines)
@@ -496,8 +499,10 @@ class ApplyPatchTool(BaseTool):
                 path = hunk.resolve_path(workdir).resolve()
                 try:
                     path.relative_to(workdir)
-                except Exception:
-                    raise ApplyError(f"Refusing to write outside workspace: {path} (cwd={workdir})")
+                except Exception as e:
+                    raise ApplyError(
+                        f"Refusing to write outside workspace: {path} (cwd={workdir})"
+                    ) from e
 
                 if isinstance(hunk, AddFile):
                     detail = {"kind": "Add", "bytes": len(hunk.contents.encode("utf-8"))}
@@ -526,7 +531,10 @@ class ApplyPatchTool(BaseTool):
 
                     detail = {
                         "kind": "Update",
-                        "replacements": [{"start": s, "old_len": l, "new_len": len(n)} for (s, l, n) in reps],
+                        "replacements": [
+                            {"start": start, "old_len": old_len, "new_len": len(new)}
+                            for (start, old_len, new) in reps
+                        ],
                         "moved_to": str((workdir / hunk.move_path).resolve()) if hunk.move_path else None,
                         "size_bytes": len(new_content.encode("utf-8")),
                     }

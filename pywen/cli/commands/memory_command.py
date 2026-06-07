@@ -1,7 +1,9 @@
 """内存管理命令实现"""
-from rich.panel import Panel
 from rich import get_console
-from .base_command import BaseCommand, CommandResult, CommandAction
+from rich.panel import Panel
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class MemoryCommand(BaseCommand):
     def __init__(self):

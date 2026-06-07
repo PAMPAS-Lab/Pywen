@@ -1,16 +1,20 @@
 from __future__ import annotations
+
 import re
 from typing import Any, Dict, List, Tuple
-from .prompt import (
-    compression_prompt,
-    keyword_continuity_score_prompt,
-    first_downgrade_prompt,
-    second_downgrade_prompt,
-)
+
+from pywen.config.manager import ConfigManager
 from pywen.config.token_limits import TokenLimits
 from pywen.llm.llm_basics import LLMMessage
 from pywen.llm.llm_events import LLM_Events
-from pywen.config.manager import ConfigManager
+
+from .prompt import (
+    compression_prompt,
+    first_downgrade_prompt,
+    keyword_continuity_score_prompt,
+    second_downgrade_prompt,
+)
+
 
 class MemoryMonitor:
     def __init__(self, config_mgr: ConfigManager):
@@ -48,7 +52,7 @@ class MemoryMonitor:
         history_text = "\n".join(f"{m.role}: {m.content}" for m in history)
         prompt_text = compression_prompt.replace("<<HISTORY>>", history_text)
 
-        cli.print(f"⏳ context compacting...", "yellow")
+        cli.print("⏳ context compacting...", "yellow")
         _, summary_text = await self._llm_ask_user_prompt(llm_client, prompt_text)
         if not summary_text:
             return 0, self._fallback_compact_history(history)

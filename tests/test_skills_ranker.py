@@ -7,18 +7,12 @@
 4. 单元测试覆盖降级路径（关键词匹配）
 """
 from __future__ import annotations
-import sys
+
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 from pywen.skills.models import SkillMetadata, SkillScope
-from pywen.skills.ranker import rank_skills_by_relevance, _rank_by_keywords
+from pywen.skills.ranker import _rank_by_keywords, rank_skills_by_relevance
 from pywen.skills.render import render_skills_section
 
 

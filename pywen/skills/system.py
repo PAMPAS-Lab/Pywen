@@ -1,8 +1,9 @@
 """System skills caching and installation."""
 from __future__ import annotations
+
+import hashlib
 import os
 import shutil
-import hashlib
 from datetime import datetime
 from pathlib import Path
 
@@ -45,7 +46,7 @@ def install_system_skills(pywen_home: Path, embedded_skills_dir: Path | None = N
 
     # Emit audit event for system skills installation
     try:
-        from .audit import emit, AuditEvent, AuditEventType
+        from .audit import AuditEvent, AuditEventType, emit
         emit(AuditEvent(
             event=AuditEventType.SYSTEM_SKILLS_INSTALLED,
             timestamp=datetime.now().isoformat(),

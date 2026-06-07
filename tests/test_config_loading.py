@@ -1,8 +1,10 @@
 import tempfile
-import yaml
+
 import pytest
+import yaml
 
 from pywen.config.manager import ConfigManager
+
 
 @pytest.fixture
 def sample_yaml_config():
@@ -109,17 +111,18 @@ def test_env_fallback(sample_yaml_config, monkeypatch):
     测试：YAML 中缺失字段时，ENV 是否补齐
     """
     # 修改 YAML：删除 pywen 的 api_key
-    data = yaml.safe_load(open(sample_yaml_config))
+    with open(sample_yaml_config, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
     data["agents"][0]["api_key"] = None
 
-    new_file = tempfile.NamedTemporaryFile(delete=False, suffix=".yaml", mode="w")
-    yaml.safe_dump(data, new_file)
-    new_file.close()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".yaml", mode="w") as new_file:
+        yaml.safe_dump(data, new_file)
+        new_file_name = new_file.name
 
     # 设置环境变量
     monkeypatch.setenv("PYWEN_API_KEY", "env_api_key")
 
-    args = DummyArgs(config=new_file.name)
+    args = DummyArgs(config=new_file_name)
 
     mgr = ConfigManager(args.config)
     mgr.get_app_config(args)

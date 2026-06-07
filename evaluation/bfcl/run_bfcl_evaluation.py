@@ -1,15 +1,15 @@
-import sys
-import json
 import argparse
+import json
+import sys
 from pathlib import Path
 from typing import Optional
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from evaluation.bfcl.dataset import BFCLDataset
-from evaluation.bfcl.evaluator import BFCLEvaluator
-from evaluation.bfcl.adapter import create_bfcl_adapter
+from evaluation.bfcl.adapter import create_bfcl_adapter  # noqa: E402
+from evaluation.bfcl.dataset import BFCLDataset  # noqa: E402
+from evaluation.bfcl.evaluator import BFCLEvaluator  # noqa: E402
 
 
 def create_llm_client(config_path: Optional[str] = None):
@@ -41,10 +41,10 @@ def run_bfcl_evaluation(
     output_dir: str | Path | None = None
 ):
     print("\n" + "="*60)
-    print(f"🚀 Pywen BFCL评估")
+    print("🚀 Pywen BFCL评估")
     print("="*60)
 
-    print(f"\n🤖 创建LLM客户端...")
+    print("\n🤖 创建LLM客户端...")
     try:
         llm_client, model = create_llm_client(config_path)
         if not model:
@@ -59,7 +59,7 @@ def run_bfcl_evaluation(
     bfcl_agent = create_bfcl_adapter(llm_client, model)
     print(f"   适配器名称: {bfcl_agent.name}")
 
-    print(f"\n📚 加载BFCL数据集 (自动下载)...")
+    print("\n📚 加载BFCL数据集 (自动下载)...")
     print(f"   类别: {category}")
     print(f"   样本数: {max_samples if max_samples > 0 else '全部'}")
 
@@ -82,7 +82,7 @@ def run_bfcl_evaluation(
     print(f"正确样本数: {results['correct_samples']}/{results['total_samples']}")
 
     if results.get('category_metrics'):
-        print(f"\n分类准确率:")
+        print("\n分类准确率:")
         for cat, metrics in results['category_metrics'].items():
             print(f"  {cat}: {metrics['accuracy']:.2%} ({metrics['correct']}/{metrics['total']})")
 
@@ -129,5 +129,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 

@@ -1,26 +1,35 @@
 """command processor"""
 from __future__ import annotations
+
 import os
 import subprocess
-from typing import Dict 
-from .commands.custom_prompts import CustomCommand
-from .commands.base_command import BaseCommand,CommandResult,CommandAction
-from .commands.help_command import HelpCommand
+from typing import Dict
+
+from pywen.config.prompt_commands import load_prompt_specs
+
 from .commands.about_command import AboutCommand
-from .commands.clear_command import ClearCommand
-from .commands.quit_command import QuitCommand
-from .commands.memory_command import MemoryCommand
-from .commands.stats_command import StatsCommand
 from .commands.agent_command import AgentCommand
+from .commands.base_command import BaseCommand, CommandAction, CommandResult
 from .commands.bug_command import BugCommand
-from .commands.tools_command import ToolsCommand
+from .commands.clear_command import ClearCommand
+from .commands.custom_prompts import CustomCommand
+from .commands.help_command import HelpCommand
+from .commands.memory_command import MemoryCommand
 from .commands.model_command import ModelCommand
 from .commands.placeholder_commands import (
-    PrivacyCommand, ThemeCommand, DocsCommand,
-    EditorCommand, McpCommand, ExtensionsCommand,
-    ChatCommand, CompressCommand
+    ChatCommand,
+    CompressCommand,
+    DocsCommand,
+    EditorCommand,
+    ExtensionsCommand,
+    McpCommand,
+    PrivacyCommand,
+    ThemeCommand,
 )
-from pywen.config.prompt_commands import load_prompt_specs
+from .commands.quit_command import QuitCommand
+from .commands.stats_command import StatsCommand
+from .commands.tools_command import ToolsCommand
+
 
 class CommandProcessor:
     def __init__(self):
@@ -117,15 +126,13 @@ class CommandProcessor:
             )
             
             # 显示结果
-            if result.stdout:
-                if console:
-                    console.print(f"Output:\n{result.stdout}", "orange3")
-                    console.print("")  # 添加换行
+            if result.stdout and console:
+                console.print(f"Output:\n{result.stdout}", "orange3")
+                console.print("")  # 添加换行
             
-            if result.stderr:
-                if console:
-                    console.print(f"Error output:\n{result.stderr}", "orange3")
-                    console.print("")  # 添加换行
+            if result.stderr and console:
+                console.print(f"Error output:\n{result.stderr}", "orange3")
+                console.print("")  # 添加换行
             
             if result.returncode != 0:
                 if console:

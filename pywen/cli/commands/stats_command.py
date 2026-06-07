@@ -1,10 +1,14 @@
 """Stats command implementation."""
-from typing import Dict, Any
-from rich.panel import Panel
+from typing import Any, Dict
+
 from rich import get_console
+from rich.panel import Panel
 from rich.table import Table
-from .base_command import BaseCommand, CommandResult, CommandAction
+
 from pywen.utils.session_stats import session_stats
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class StatsCommand(BaseCommand):
     """Display session statistics."""
@@ -283,7 +287,7 @@ class StatsCommand(BaseCommand):
             if agent_stats.api.total_errors > 0:
                 content.append(f"  Errors: [red]{agent_stats.api.total_errors}[/red] ({agent_stats.api.error_rate:.1f}%)")
             else:
-                content.append(f"  Error Rate: [green]0.0%[/green]")
+                content.append("  Error Rate: [green]0.0%[/green]")
             content.append("")
 
         # Token stats

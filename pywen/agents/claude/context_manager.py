@@ -2,11 +2,11 @@
 Context Manager for Claude Code Agent
 Handles project context extraction and management
 """
-import os
 import logging
+import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

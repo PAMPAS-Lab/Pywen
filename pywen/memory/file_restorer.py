@@ -1,6 +1,7 @@
-import time
 import math
+import time
 from pathlib import Path
+
 
 class IntelligentFileRestorer():
     def __init__(self):

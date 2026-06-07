@@ -4,9 +4,9 @@ Claude Code Agent prompts and context management
 import os
 import platform
 import subprocess
-from pathlib import Path
-from typing import Dict, List, Optional
 from datetime import datetime
+from typing import Dict, List, Optional
+
 
 class ClaudeCodePrompts:
     """Manages prompts and context for Claude Code Agent"""
@@ -257,7 +257,7 @@ assistant: Clients are marked as failed in the `connectToServer` function in src
                 os_version = platform.mac_ver()[0]
             elif platform.system() == "Windows":
                 os_version = platform.win32_ver()[0]
-        except:
+        except Exception:
             os_version = platform.release()
 
         # Build the official prompt structure
@@ -562,7 +562,7 @@ Notes:
                 os_version = platform.mac_ver()[0]
             elif platform.system() == "Windows":
                 os_version = platform.win32_ver()[0]
-        except:
+        except Exception:
             os_version = platform.release()
 
         return f"""Here is useful information about the environment you are running in:

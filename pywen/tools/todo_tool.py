@@ -1,10 +1,11 @@
 import json
-import uuid
 import logging
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
-from pywen.tools.base_tool import BaseTool
+
 from pywen.llm.llm_basics import ToolCallResult
+from pywen.tools.base_tool import BaseTool
 from pywen.tools.tool_manager import register_tool
 
 DESCRIPTION = """
@@ -302,7 +303,7 @@ class TodoStorage:
 
     def _get_storage_dir(self) -> Path:
         """Get the storage directory for todos"""
-        from pywen.config.manager import ConfigManager 
+        from pywen.config.manager import ConfigManager
         todos_dir = ConfigManager.get_pywen_config_dir() / "todos"
         todos_dir.mkdir(exist_ok=True)
         return todos_dir
@@ -462,10 +463,7 @@ class TodoTool(BaseTool):
             else:
                 status = "☐"
             
-            if i == 0:
-                line = f"  ⎿  {status} {todo.content}"
-            else:
-                line = f"     {status} {todo.content}"
+            line = f"  ⎿  {status} {todo.content}" if i == 0 else f"     {status} {todo.content}"
             lines.append(line)
 
         return "\n".join(lines)

@@ -10,17 +10,11 @@ Acceptance criteria:
 7. Pre-release with build metadata (e.g. "2.0.0-rc.1+build.42") are accepted
 """
 from __future__ import annotations
-import sys
+
 import textwrap
 from pathlib import Path
 
-import pytest
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from pywen.skills.loader import parse_skill_file, SKILLS_FILENAME
+from pywen.skills.loader import SKILLS_FILENAME, parse_skill_file
 from pywen.skills.models import SkillScope
 from pywen.skills.render import render_skills_section
 

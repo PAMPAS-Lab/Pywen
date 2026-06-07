@@ -12,7 +12,7 @@ Ranking strategy (with automatic fallback):
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List
 
 from .models import SkillMetadata
 

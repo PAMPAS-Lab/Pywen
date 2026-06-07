@@ -1,7 +1,16 @@
 from __future__ import annotations
-from typing import Dict, Any 
-from .base_command import BaseCommand, CommandResult, CommandAction
-from pywen.config.prompt_commands import PromptSpec, parse_prompt_args, expand_prompt_template, validate_required_named_args
+
+from typing import Any, Dict
+
+from pywen.config.prompt_commands import (
+    PromptSpec,
+    expand_prompt_template,
+    parse_prompt_args,
+    validate_required_named_args,
+)
+
+from .base_command import BaseCommand, CommandAction, CommandResult
+
 
 class CustomCommand(BaseCommand):
     def __init__(self, spec: PromptSpec):

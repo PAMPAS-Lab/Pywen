@@ -1,17 +1,18 @@
-import os
-import shutil
 import argparse
-import traceback
+import contextlib
+import os
 import shlex
-from typing import cast
+import shutil
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 from dataclasses import dataclass
-from typing import Any, Callable
-from docker import from_env, DockerClient
-from docker.errors import ImageNotFound, APIError, NotFound
-from docker.models.containers import Container, ExecResult
+from pathlib import Path
+from typing import Any, Callable, cast
+
 from datasets import load_dataset
+from docker import DockerClient, from_env
+from docker.errors import APIError, ImageNotFound, NotFound
+from docker.models.containers import Container, ExecResult
 from tqdm import tqdm
 
 AGENT_IMAGE = "pywen/agent:0.1"
@@ -62,7 +63,7 @@ class DockerOps:
                 if "error" in chunk:
                     raise RuntimeError(chunk["error"])
         except APIError as e:
-            raise RuntimeError(f"Docker build failed: {e}")
+            raise RuntimeError(f"Docker build failed: {e}") from e
 
     def run_container(self, image: str, *, command: str = "/bin/bash", detach: bool = True,
                       tty: bool = False, stdin_open: bool = True, environment: dict | None = None,
@@ -80,7 +81,7 @@ class DockerOps:
             )
             return cast(Container, container)
         except Exception as e:
-            raise RuntimeError(f"Failed to run container from {image}: {e}")
+            raise RuntimeError(f"Failed to run container from {image}: {e}") from e
 
     def exec_sh(self, container: Container, shell_cmd: str, check: bool = True) -> str:
         """ 在容器内用 /bin/bash -lc 执行命令。统一解析 ExitCode 和输出，失败时抛错。 """
@@ -91,7 +92,7 @@ class DockerOps:
                     stdin=False,
             )
         except Exception as e:
-            raise RuntimeError(f"Exec failed: {shell_cmd}\n{e}")
+            raise RuntimeError(f"Exec failed: {shell_cmd}\n{e}") from e
 
         code = getattr(res, "exit_code", None)
         out = getattr(res, "output", None)
@@ -107,23 +108,20 @@ class DockerOps:
     def stop_and_remove(self, container: Container | None) -> None:
         if container is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             container.stop(timeout=5)
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             container.remove()
-        except Exception:
-            pass
 
     def cp_from_container(self, container: Container, src_path: str, dst: Path) -> None:
         """ 将容器内路径内容复制到宿主目录。dst 若不存在会创建。 """
         dst.mkdir(parents=True, exist_ok=True)
         try:
             stream, _ = container.get_archive(src_path)
-        except NotFound:
-            raise RuntimeError(f"Path not found in container: {src_path}")
-        import tarfile, io as _io
+        except NotFound as e:
+            raise RuntimeError(f"Path not found in container: {src_path}") from e
+        import io as _io
+        import tarfile
         bio = _io.BytesIO()
         for chunk in stream:
             bio.write(chunk)
@@ -300,10 +298,7 @@ class BenchmarkEvaluation:
             return True
         
         # 如果 log 文件存在且非空，也认为已完成（即使没有生成 patch）
-        if log_path.exists() and log_path.stat().st_size > 0:
-            return True
-        
-        return False
+        return bool(log_path.exists() and log_path.stat().st_size > 0)
 
     def run_one_instance(self, instance_id: str):
         # Skip if already completed

@@ -1,7 +1,10 @@
 from __future__ import annotations
+
 from typing import Any, Callable, Dict, Optional, Tuple
+
 from .manager import HookManager
 from .models import HookEvent
+
 
 def run_tool_with_hooks(
     *,

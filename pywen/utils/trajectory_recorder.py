@@ -3,9 +3,10 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from pywen.llm.llm_basics import LLMMessage, LLMResponse
-from pywen.llm.llm_basics import ToolCallResult, ToolCall
+
+from pywen.llm.llm_basics import LLMMessage, LLMResponse, ToolCall, ToolCallResult
 from pywen.utils.session_stats import session_stats
+
 
 class TrajectoryRecorder:
     """Records trajectory data for agent execution and LLM interactions."""
@@ -13,7 +14,7 @@ class TrajectoryRecorder:
     def __init__(self, trajectory_path: Optional[Path] = None):
         """Initialize trajectory recorder."""
         if trajectory_path is None:
-            from pywen.config.manager import ConfigManager 
+            from pywen.config.manager import ConfigManager
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             trajectory_path = ConfigManager.get_trajectories_dir() / f"trajectory_{timestamp}.json"
 
